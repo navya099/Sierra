@@ -19,6 +19,8 @@ from tkinter import filedialog, messagebox, ttk
 import ezdxf
 
 from dxf_watcher import DXFWatcher
+from profile_scale import ProfileScale
+from profile_drawing import DrawingOptions, create_profile_drawing
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -53,7 +55,7 @@ def parse_ground_txt(path: Path) -> list[tuple[float, float]]:
     return points
 
 
-def create_design_dxf(txt_path: Path, output_path: Path) -> None:
+def create_design_dxf(txt_path: Path, output_path: Path, scale: ProfileScale | None = None) -> None:
     points = parse_ground_txt(txt_path)
     if output_path.exists():
         raise FileExistsError(f'기존 설계 파일을 보호하기 위해 덮어쓰지 않습니다: {output_path}')
@@ -86,6 +88,7 @@ class AlignmentGUI:
         self.worker: threading.Thread | None = None
         self.watcher: DXFWatcher | None = None
         self.generation = 0
+        self.exporting = False
         self.closed = False
         self._build()
         self.root.after(100, self._drain_events)
@@ -97,6 +100,7 @@ class AlignmentGUI:
         file_menu.add_command(label='지반고 TXT 불러오기', command=self.open_txt)
         file_menu.add_command(label='설계 DXF 불러오기', command=self.open_dxf)
         file_menu.add_separator()
+        file_menu.add_command(label='종단면도 DXF 출력', command=self.export_drawing)
         file_menu.add_command(label='결과 CSV 폴더 열기', command=self.open_folder)
         file_menu.add_separator()
         file_menu.add_command(label='종료', command=self.close)
@@ -169,7 +173,8 @@ class AlignmentGUI:
 
         footer = ttk.Frame(outer)
         footer.pack(fill='x', pady=(6, 0))
-        ttk.Button(footer, text='도면 출력 (추후 지원)', state='disabled').pack(side='left', padx=(0, 8))
+        self.export_button = ttk.Button(footer, text='도면 출력 (DXF)', command=self.export_drawing, state='disabled')
+        self.export_button.pack(side='left', padx=(0, 8))
         ttk.Button(footer, text='결과 CSV 열기', command=self.open_folder).pack(side='left')
         ttk.Button(footer, text='종료', command=self.close).pack(side='right')
         ttk.Button(footer, text='매뉴얼', command=self.show_manual).pack(side='right', padx=8)
@@ -339,10 +344,14 @@ class AlignmentGUI:
         try:
             while True:
                 generation, kind, data = self.events.get_nowait()
-                if generation != self.generation:
+                if generation != self.generation and kind not in ('export_ok', 'export_error'):
                     continue
                 if kind == 'update':
                     self._show_results(*data)
+                elif kind == 'export_ok':
+                    self._export_success(data)
+                elif kind == 'export_error':
+                    self._export_failure(data)
                 elif kind == 'error':
                     self.status_var.set('분석 대기 / 오류')
                     self._log(f'분석 대기/오류: {data}')
@@ -355,6 +364,7 @@ class AlignmentGUI:
             tree.delete(*tree.get_children())
         self.last_vips = []
         self.last_stations = []
+        self.export_button.configure(state='disabled')
         self.range_var.set('—')
         self.vip_count_var.set('—')
         self.max_grade_var.set('—')
@@ -363,6 +373,8 @@ class AlignmentGUI:
         self._clear_results()
         self.last_vips = vips
         self.last_stations = stations
+        if not self.exporting:
+            self.export_button.configure(state='normal')
         def fmt(v):
             return '—' if v is None else f'{v:+.3f}'
         for p in vips:
@@ -391,23 +403,73 @@ class AlignmentGUI:
         except Exception as exc:
             messagebox.showerror('폴더 열기 실패', str(exc))
 
+    def export_drawing(self):
+        """Generate final_result.dxf in a worker, leaving source DXF untouched."""
+        if self.exporting:
+            return
+        if self.dxf_path is None or not self.last_vips or not self.last_stations:
+            messagebox.showwarning('도면 출력', '먼저 DXF를 불러와 종단 분석을 완료하세요.')
+            return
+        source = self.dxf_path
+        proposed = source.with_name('final_result.dxf')
+        filename = filedialog.asksaveasfilename(
+            title='종단면도 DXF 저장', initialdir=str(source.parent),
+            initialfile=proposed.name, defaultextension='.dxf',
+            filetypes=[('DXF 도면', '*.dxf')])
+        if not filename:
+            return
+        target = Path(filename).expanduser().resolve()
+        if target == source.resolve():
+            messagebox.showerror('도면 출력', '설계용 DXF를 출력 대상으로 지정할 수 없습니다.')
+            return
+        if target.exists() and not messagebox.askyesno(
+                '출력 파일 덮어쓰기', f'기존 출력 도면을 교체하시겠습니까?\n{target}\n\nCAD에서 해당 파일을 열어 두었다면 먼저 닫아주세요.'):
+            return
+        self.exporting = True
+        self.export_button.configure(state='disabled')
+        self.status_var.set('종단면도 생성 중')
+        self._log(f'종단면도 출력 시작: {target}')
+        generation = self.generation
+        def work():
+            try:
+                result = create_profile_drawing(source, target, DrawingOptions())
+                self.events.put((generation, 'export_ok', result))
+            except Exception as exc:
+                self.events.put((generation, 'export_error', str(exc)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _export_success(self, result):
+        self.exporting = False
+        if self.last_vips:
+            self.export_button.configure(state='normal')
+        self.status_var.set('도면 출력 완료')
+        self._log(f"도면 출력 완료: {result['output']} / VIP {result['vip_circle_count']}개 / 밴드 측점 {result['band_station_count']}개")
+        messagebox.showinfo('도면 출력 완료', f"final_result DXF 생성 완료\n\n{result['output']}\n\nCAD에서 열어 확인하세요.")
+
+    def _export_failure(self, error):
+        self.exporting = False
+        if self.last_vips:
+            self.export_button.configure(state='normal')
+        self.status_var.set('도면 출력 오류')
+        self._log(f'도면 출력 실패: {error}')
+        messagebox.showerror('도면 출력 실패', error)
+
     def show_manual(self):
         win = tk.Toplevel(self.root)
         win.title('사용자 매뉴얼')
         win.geometry('670x430')
         content = (
             '1. TXT 입력\n측점과 지반고를 공백으로 구분한 TXT를 불러옵니다.\n'
-            'converted_dxf.dxf가 없을 때만 새로 생성합니다. 기존 설계는 덮어쓰지 않습니다.\n\n'
+            'converted_dxf.dxf가 없을 때만 생성합니다. 기존 설계는 덮어쓰지 않습니다.\n\n'
             '2. CAD 종단 설계\nGROUND_PROFILE은 지반고입니다.\n'
             'PLAN_PROFILE 레이어에 열린 LWPOLYLINE 1개를 그립니다.\n'
-            'X=측점(m), Y=계획고(m), 축척 1:1, 정점 측점은 오름차순이어야 합니다.\n'
-            '현재 호(bulge) 및 종곡선은 지원하지 않습니다.\n\n'
-            '3. 자동 계산\nCAD에서 DXF 저장(Ctrl+S) 시 파일 변경을 감지해 VIP와\n'
-            '증분측점별 지반고·계획고·표고차를 계산합니다.\n'
-            '결과는 DXF 폴더에 plan_profile_result.csv와\n'
-            'profile_station_result.csv로 저장됩니다.\n\n'
-            '4. 출력\nfinal_result.dxf 도면 출력은 6단계에서 구현할 예정입니다.\n'
-            '설계용 converted_dxf.dxf는 Python이 읽기 전용으로 취급합니다.'
+            '모든 설계 좌표는 1:1 (X=측점 m, Y=표고 m)입니다.\n'
+            '호(bulge) 및 종곡선 계산은 아직 지원하지 않습니다.\n\n'
+            '3. 자동 계산\nCAD에서 DXF를 저장하면 VIP와 증분측점별 표고차를 계산하고 CSV를 갱신합니다.\n\n'
+            '4. 도면 출력\n분석 완료 후 도면 출력 (DXF)을 눌러 최종 종단면도를 생성합니다.\n'
+            '지반선, 계획선, 20m/200m 그리드, VIP 표기, 구배·거리, 하단 밴드를 포함합니다.\n'
+            '도면 분할·출력 축척·종곡선 종거값은 아직 지원하지 않습니다.\n'
+            'converted_dxf.dxf는 항상 읽기 전용으로 취급합니다.'
         )
         text = tk.Text(win, wrap='word', padx=15, pady=12, font=('맑은 고딕', 10))
         text.insert('1.0', content)
