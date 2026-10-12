@@ -1,16 +1,15 @@
 """Read-only extraction of railway vertical alignment from a DXF LWPOLYLINE."""
 from __future__ import annotations
 
-import os.path
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import argparse
 import csv
 import json
 import math
-from tkinter.filedialog import askopenfilename
 
 import ezdxf
+from profile_scale import ProfileScale
 
 
 @dataclass(frozen=True)
@@ -37,6 +36,7 @@ def extract_profile(
     path: str | Path,
     layer: str = "PLAN_PROFILE",
     gradient_tolerance: float = 1e-5,
+    scale: ProfileScale | None = None,
 ) -> list[ProfilePoint]:
     """Return BP/VIP/EP from one open, straight-segment LWPOLYLINE.
 
@@ -74,7 +74,8 @@ def extract_profile(
         raise ValueError("계획 종단 정점이 최소 2개 필요합니다.")
     if any(abs(bulge) > 1e-12 for _, _, bulge in raw):
         raise ValueError("호(bulge)가 포함된 LWPOLYLINE은 아직 지원하지 않습니다.")
-    points = [(float(x), float(y)) for x, y, _ in raw]
+    scale = scale or ProfileScale()
+    points = [scale.to_real(x, y) for x, y, _ in raw]
     if not all(math.isfinite(v) for point in points for v in point):
         raise ValueError("좌표에 NaN 또는 무한대가 있습니다.")
 
@@ -110,16 +111,23 @@ def export_csv(rows: list[ProfilePoint], output_path: str | Path) -> None:
 def _fmt(value: float | None) -> str:
     return "—" if value is None else f"{value:+.3f}"
 
-def run_cui():
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="DXF 계획 종단 VIP/구배 추출")
     parser.add_argument("dxf", help="converted_dxf.dxf 파일 경로")
     parser.add_argument("--layer", default="PLAN_PROFILE")
     parser.add_argument("--tolerance", type=float, default=1e-5, help="구배 변화 허용오차 (‰)")
     parser.add_argument("--csv", help="선택적 CSV 출력 경로")
     parser.add_argument("--json", help="선택적 JSON 출력 경로")
+    parser.add_argument("--h", type=float, default=1)
+    parser.add_argument("--v", type=float, default=1)
+    parser.add_argument("--datum", type=float, default=0)
+    parser.add_argument("--station-origin", type=float, default=0)
+    parser.add_argument("--paper-mm", action="store_true", help="도면 좌표 mm 및 H/V 축척 사용")
     args = parser.parse_args()
 
-    rows = extract_profile(args.dxf, layer=args.layer, gradient_tolerance=args.tolerance)
+    scale = ProfileScale(args.h, args.v, args.datum, args.station_origin, "paper_mm" if args.paper_mm else "legacy")
+    rows = extract_profile(args.dxf, layer=args.layer, gradient_tolerance=args.tolerance, scale=scale)
     print(f"{'구분':<8} {'STA':>12} {'EL':>12} {'진입(‰)':>12} {'진출(‰)':>12} {'변화(‰)':>12}")
     for row in rows:
         print(f"{row.kind:<8} {row.sta:12.3f} {row.elevation:12.3f} "
@@ -134,17 +142,7 @@ def run_cui():
             encoding="utf-8",
         )
         print(f"JSON 저장 완료: {args.json}")
-def main() -> None:
-    import_file = askopenfilename(title='converted_dxf 선택', filetypes=[("dxf", "converted_dxf.dxf")])
-    import_directory = Path(import_file).parent
-    rows = extract_profile(import_file)
-    print(f"{'구분':<8} {'STA':>12} {'EL':>12} {'진입(‰)':>12} {'진출(‰)':>12} {'변화(‰)':>12}")
-    for row in rows:
-        print(f"{row.kind:<8} {row.sta:12.3f} {row.elevation:12.3f} "
-              f"{_fmt(row.gradient_in):>12} {_fmt(row.gradient_out):>12} "
-              f"{_fmt(row.delta_gradient):>12}")
-    csv_path = os.path.join(import_directory, 'plan_profle_result.csv')
-    export_csv(rows, csv_path)
-    print(f"CSV 저장 완료: {csv_path}")
+
+
 if __name__ == "__main__":
     main()

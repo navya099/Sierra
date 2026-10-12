@@ -403,12 +403,57 @@ class AlignmentGUI:
         except Exception as exc:
             messagebox.showerror('폴더 열기 실패', str(exc))
 
+    def _print_options(self):
+        """Modal print-options dialog. None means cancelled."""
+        win = tk.Toplevel(self.root)
+        win.title('도면 출력 옵션')
+        win.resizable(False, False)
+        win.transient(self.root)
+        win.grab_set()
+        frame = ttk.Frame(win, padding=18)
+        frame.pack(fill='both', expand=True)
+        vertical_var = tk.StringVar(value='400')
+        split_var = tk.StringVar(value='분할 안 함')
+        ttk.Label(frame, text='종단 축척 (1:V)').grid(row=0, column=0, sticky='w', padx=(0, 14), pady=8)
+        entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
+        entry.grid(row=0, column=1, sticky='ew', pady=8)
+        ttk.Label(frame, text='종단 분할 옵션').grid(row=1, column=0, sticky='w', padx=(0, 14), pady=8)
+        ttk.Combobox(frame, textvariable=split_var, values=['분할 안 함'], state='readonly', width=15).grid(row=1, column=1, sticky='ew', pady=8)
+        ttk.Label(frame, text='수평 1:1000 기준 · 수직 확대율 = 1000 / V', foreground='gray').grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 10))
+        ttk.Separator(frame).grid(row=3, column=0, columnspan=2, sticky='ew', pady=(4, 12))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=0, columnspan=2, sticky='e')
+        result = {'value': None}
+        def accept():
+            try:
+                v = float(vertical_var.get().strip())
+                if not math.isfinite(v) or v <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror('축척 입력 오류', '종단 축척은 0보다 큰 숫자여야 합니다.', parent=win)
+                return
+            result['value'] = DrawingOptions(vertical_scale=v)
+            win.destroy()
+        ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
+        ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
+        win.protocol('WM_DELETE_WINDOW', win.destroy)
+        win.bind('<Return>', lambda event: accept())
+        win.bind('<Escape>', lambda event: win.destroy())
+        win.update_idletasks()
+        win.geometry(f'+{self.root.winfo_rootx()+80}+{self.root.winfo_rooty()+80}')
+        entry.focus_set()
+        self.root.wait_window(win)
+        return result['value']
+
     def export_drawing(self):
         """Generate final_result.dxf in a worker, leaving source DXF untouched."""
         if self.exporting:
             return
         if self.dxf_path is None or not self.last_vips or not self.last_stations:
             messagebox.showwarning('도면 출력', '먼저 DXF를 불러와 종단 분석을 완료하세요.')
+            return
+        drawing_options = self._print_options()
+        if drawing_options is None:
             return
         source = self.dxf_path
         proposed = source.with_name('final_result.dxf')
@@ -428,11 +473,11 @@ class AlignmentGUI:
         self.exporting = True
         self.export_button.configure(state='disabled')
         self.status_var.set('종단면도 생성 중')
-        self._log(f'종단면도 출력 시작: {target}')
+        self._log(f'종단면도 출력 시작: {target} / V=1:{drawing_options.vertical_scale:g} / 분할 없음')
         generation = self.generation
         def work():
             try:
-                result = create_profile_drawing(source, target, DrawingOptions())
+                result = create_profile_drawing(source, target, drawing_options)
                 self.events.put((generation, 'export_ok', result))
             except Exception as exc:
                 self.events.put((generation, 'export_error', str(exc)))
@@ -468,7 +513,7 @@ class AlignmentGUI:
             '3. 자동 계산\nCAD에서 DXF를 저장하면 VIP와 증분측점별 표고차를 계산하고 CSV를 갱신합니다.\n\n'
             '4. 도면 출력\n분석 완료 후 도면 출력 (DXF)을 눌러 최종 종단면도를 생성합니다.\n'
             '지반선, 계획선, 20m/200m 그리드, VIP 표기, 구배·거리, 하단 밴드를 포함합니다.\n'
-            '도면 분할·출력 축척·종곡선 종거값은 아직 지원하지 않습니다.\n'
+            '출력 옵션에서 수직 축척(기본 1:400)을 설정할 수 있습니다. 도면 분할과 종곡선 종거값은 추후 지원합니다.\n'
             'converted_dxf.dxf는 항상 읽기 전용으로 취급합니다.'
         )
         text = tk.Text(win, wrap='word', padx=15, pady=12, font=('맑은 고딕', 10))

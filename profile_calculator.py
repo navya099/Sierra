@@ -15,6 +15,7 @@ from pathlib import Path
 
 import ezdxf
 from dxf_reader import extract_profile
+from profile_scale import ProfileScale
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ class StationResult:
     classification: str
 
 
-def read_ground_points(dxf_path: str | Path, layer: str = "GROUND_PROFILE") -> list[tuple[float, float]]:
+def read_ground_points(dxf_path: str | Path, layer: str = "GROUND_PROFILE", scale: ProfileScale | None = None) -> list[tuple[float, float]]:
     doc = ezdxf.readfile(str(dxf_path))
     matches = [e for e in doc.modelspace() if e.dxftype() in ("LWPOLYLINE", "POLYLINE")
                and e.dxf.layer.casefold() == layer.casefold()]
@@ -51,6 +52,7 @@ def read_ground_points(dxf_path: str | Path, layer: str = "GROUND_PROFILE") -> l
         if any(abs(v.dxf.get("bulge", 0)) > 1e-12 for v in e.vertices):
             raise ValueError("지반고의 호(bulge)는 지원하지 않습니다.")
         points = [(float(v.dxf.location.x), float(v.dxf.location.y)) for v in e.vertices]
+    points = (scale or ProfileScale()).convert_points_to_real(points)
     validate_points(points, "지반고")
     return points
 
@@ -88,11 +90,12 @@ def calculate_stations(
     ground_layer: str = "GROUND_PROFILE",
     plan_layer: str = "PLAN_PROFILE",
     include_vips: bool = True,
+    scale: ProfileScale | None = None,
 ) -> list[StationResult]:
     if not math.isfinite(interval) or interval <= 0:
         raise ValueError("증분측점 간격은 양수인 유한한 값이어야 합니다.")
-    ground = PiecewiseLinear(read_ground_points(dxf_path, ground_layer))
-    vip = extract_profile(dxf_path, layer=plan_layer)
+    ground = PiecewiseLinear(read_ground_points(dxf_path, ground_layer, scale))
+    vip = extract_profile(dxf_path, layer=plan_layer, scale=scale)
     plan = PiecewiseLinear([(p.sta, p.elevation) for p in vip])
     start = max(ground.xs[0], plan.xs[0])
     end = min(ground.xs[-1], plan.xs[-1])
@@ -138,8 +141,14 @@ def main() -> None:
     parser.add_argument("--ground-layer", default="GROUND_PROFILE")
     parser.add_argument("--plan-layer", default="PLAN_PROFILE")
     parser.add_argument("--no-vips", action="store_true", help="VIP 측점 추가 출력 안 함")
+    parser.add_argument("--h", type=float, default=1)
+    parser.add_argument("--v", type=float, default=1)
+    parser.add_argument("--datum", type=float, default=0)
+    parser.add_argument("--station-origin", type=float, default=0)
+    parser.add_argument("--paper-mm", action="store_true")
     args = parser.parse_args()
-    rows = calculate_stations(args.dxf, args.interval, args.ground_layer, args.plan_layer, not args.no_vips)
+    scale = ProfileScale(args.h, args.v, args.datum, args.station_origin, "paper_mm" if args.paper_mm else "legacy")
+    rows = calculate_stations(args.dxf, args.interval, args.ground_layer, args.plan_layer, not args.no_vips, scale=scale)
     print(f"{'STA':>10} {'지반고':>12} {'계획고':>12} {'표고차':>12} {'구배(‰)':>12} {'구분':>6}")
     for r in rows:
         print(f"{r.sta:10.3f} {r.ground_el:12.3f} {r.plan_el:12.3f} {r.difference:+12.3f} {r.gradient_permille:+12.3f} {r.classification:>6}")

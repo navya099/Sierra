@@ -33,6 +33,8 @@ class DrawingOptions:
     distance_decimals: int = 2
     vip_circle_radius: float = 2.2
     vip_elevation_decimals: int = 2
+    vertical_scale: float = 400.0  # 1:V, reference horizontal scale 1:1000
+    horizontal_scale: float = 1000.0
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -83,6 +85,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     output = Path(output_dxf).resolve()
     if source == output:
         raise ValueError('입력 DXF와 출력 DXF는 서로 달라야 합니다.')
+    if not all(math.isfinite(v) and v > 0 for v in (options.vertical_scale, options.horizontal_scale)):
+        raise ValueError('출력 축척은 양수여야 합니다.')
     if options.band_row_height <= 0 or options.text_height <= 0 or options.bottom_margin <= 0 or options.annotation_row_height <= 0 or options.vip_circle_radius <= 0:
         raise ValueError('밴드 높이, 문자 높이, 하단 여백은 양수여야 합니다.')
     if options.station_interval <= 0 or options.major_interval <= 0 or options.band_interval <= 0:
@@ -91,8 +95,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     ground_points = read_ground_points(source)
     vip = extract_profile(source)
     plan_points = [(p.sta, p.elevation) for p in vip]
-    ground = PiecewiseLinear(ground_points)
-    plan = PiecewiseLinear(plan_points)
+    raw_ground = PiecewiseLinear(ground_points)
+    raw_plan = PiecewiseLinear(plan_points)
+    ground = raw_ground
+    plan = raw_plan
     start = max(ground.xs[0], plan.xs[0])
     end = min(ground.xs[-1], plan.xs[-1])
     if end <= start:
@@ -107,6 +113,16 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                     else options.graph_bottom)
     if graph_bottom >= lowest:
         raise ValueError(f'종단면도 하단 표고({graph_bottom:.3f})는 최저 표고({lowest:.3f})보다 낮아야 합니다.')
+
+    # Vertical exaggeration affects only the plotted geometry above the
+    # profile baseline. Annotation rows and band heights stay readable.
+    factor = options.horizontal_scale / options.vertical_scale
+    def display_el(el):
+        return graph_bottom + (el - graph_bottom) * factor
+    ground_display = [(x, display_el(y)) for x, y in ground_points]
+    plan_display = [(x, display_el(y)) for x, y in plan_points]
+    ground = PiecewiseLinear(ground_display)
+    plan = PiecewiseLinear(plan_display)
 
     doc = ezdxf.new('R2010')
     doc.header['$INSUNITS'] = 6  # meters
@@ -126,8 +142,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     def clipped(poly, fn):
         return [(start, fn.at(start)[0])] + [(x, y) for x, y in poly if start < x < end] + [(end, fn.at(end)[0])]
 
-    msp.add_lwpolyline(clipped(ground_points, ground), dxfattribs={'layer': 'GROUND_PROFILE'})
-    msp.add_lwpolyline(clipped(plan_points, plan), dxfattribs={'layer': 'PLAN_PROFILE'})
+    msp.add_lwpolyline(clipped(ground_display, ground), dxfattribs={'layer': 'GROUND_PROFILE'})
+    msp.add_lwpolyline(clipped(plan_display, plan), dxfattribs={'layer': 'PLAN_PROFILE'})
 
     minor = _multiples(start, end, options.station_interval)
     major = _multiples(start, end, options.major_interval)
@@ -191,8 +207,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     for sta in band_stations:
         if sta != start and sta != end:
             _line(msp, sta, top, sta, bottom, 'PROFILE_BAND')
-        g = ground.at(sta)[0]
-        p = plan.at(sta)[0]
+        g = raw_ground.at(sta)[0]
+        p = raw_plan.at(sta)[0]
         cut = max(g - p, 0)
         fill = max(p - g, 0)
         vals = [cut, fill, g, p]
@@ -210,14 +226,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     for point in vip:
         if not (start - 1e-8 <= point.sta <= end + 1e-8):
             continue
-        _line(msp, point.sta, point.elevation, point.sta, graph_bottom, 'VIP_ANNOTATION')
-        _text(msp, f'{point.kind}  STA {point.sta:.3f}  EL {point.elevation:.3f}',
-              point.sta, point.elevation + options.text_height * 2.5,
-              options.text_height, 'VIP_ANNOTATION')
-        if point.kind.startswith('VIP'):
-            _text(msp, f'IN {_fmt_grade(point.gradient_in, options.grade_decimals)} / OUT {_fmt_grade(point.gradient_out, options.grade_decimals)}',
-                  point.sta, point.elevation + options.text_height * 1.2,
-                  options.text_height * .8, 'VIP_ANNOTATION')
+        _line(msp, point.sta, display_el(point.elevation), point.sta, graph_bottom, 'VIP_ANNOTATION')
 
     # One grade and one distance label per constant-grade segment.
     # Both labels sit on horizontal rules, independent of ground elevation.
@@ -250,6 +259,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'graph_bottom': graph_bottom,
         'grade_rule_y': grade_rule_y, 'distance_rule_y': distance_rule_y,
         'vip_circle_count': len(circle_stations),
+        'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
     }
 
 

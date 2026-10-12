@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from profile_scale import ProfileScale
 from dxf_reader import ProfilePoint, extract_profile, export_csv as export_vip_csv
 from profile_calculator import StationResult, calculate_stations, export_csv as export_station_csv
 
@@ -51,11 +52,13 @@ class DXFWatcher:
         station_csv: str | Path | None = None,
         on_update: Callable[[list[ProfilePoint], list[StationResult]], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
+        scale: ProfileScale | None = None,
     ):
         self.dxf_path = Path(dxf_path).resolve()
         if interval <= 0 or poll_seconds <= 0 or stable_seconds <= 0:
             raise ValueError('간격과 감시 주기는 모두 양수여야 합니다.')
         self.interval = interval
+        self.scale = scale or ProfileScale()
         self.poll_seconds = poll_seconds
         self.stable_seconds = stable_seconds
         self.vip_csv = Path(vip_csv).resolve() if vip_csv else self.dxf_path.with_name('plan_profile_result.csv')
@@ -93,8 +96,8 @@ class DXFWatcher:
 
         try:
             # Guard against file replacement while the DXF is being parsed.
-            vip = extract_profile(self.dxf_path)
-            stations = calculate_stations(self.dxf_path, interval=self.interval)
+            vip = extract_profile(self.dxf_path, scale=self.scale)
+            stations = calculate_stations(self.dxf_path, interval=self.interval, scale=self.scale)
             if sha256_file(self.dxf_path) != digest:
                 self._candidate_hash = None
                 return False
@@ -154,9 +157,15 @@ def main() -> None:
     parser.add_argument('--stable', type=float, default=0.6, help='저장 안정화 대기(초)')
     parser.add_argument('--vip-csv', type=Path, help='VIP CSV 출력 경로')
     parser.add_argument('--station-csv', type=Path, help='증분측점 CSV 출력 경로')
+    parser.add_argument("--h", type=float, default=1)
+    parser.add_argument("--v", type=float, default=1)
+    parser.add_argument("--datum", type=float, default=0)
+    parser.add_argument("--station-origin", type=float, default=0)
+    parser.add_argument("--paper-mm", action="store_true")
     args = parser.parse_args()
+    scale = ProfileScale(args.h, args.v, args.datum, args.station_origin, "paper_mm" if args.paper_mm else "legacy")
     watcher = DXFWatcher(
-        args.dxf, interval=args.interval, poll_seconds=args.poll,
+        args.dxf, scale=scale, interval=args.interval, poll_seconds=args.poll,
         stable_seconds=args.stable, vip_csv=args.vip_csv,
         station_csv=args.station_csv, on_update=print_update,
     )
