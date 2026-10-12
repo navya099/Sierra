@@ -31,7 +31,7 @@ class DrawingOptions:
     annotation_row_height: float = 6.0
     grade_decimals: int = 1
     distance_decimals: int = 2
-    vip_circle_radius: float = 2.2
+    vip_circle_radius: float = 4
     vip_elevation_decimals: int = 2
     vertical_scale: float = 400.0  # 1:V, reference horizontal scale 1:1000
     horizontal_scale: float = 1000.0
@@ -66,16 +66,20 @@ def _fmt_grade(value, decimals=1):
     return f'{value:.{decimals}f}' if value is not None else '—'
 
 
-def _fmt_distance(metres: float, decimals=2) -> str:
-    km = int(math.floor(metres / 1000))
-    remaining = metres - km * 1000
-    if round(remaining, decimals) >= 1000:
-        km += 1
-        remaining = 0.0
-    if km:
-        return f'{km}km{remaining:0{3 + (decimals > 0) * (decimals + 1)}.{decimals}f}'
-    return f'{remaining:.{decimals}f}m'
+def _fmt_distance(metres: float) -> str:
+    negative = False
+    if metres < 0:
+        negative = True
+        metres = abs(metres)
 
+    km = int(metres) // 1000
+    remainder = "{:.2f}".format(metres % 1000)
+    formatted_distance = "{:d}km{:06.2f}".format(km, float(remainder))
+
+    if negative:
+        formatted_distance = "-" + formatted_distance
+
+    return formatted_distance
 
 def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            options: DrawingOptions | None = None) -> dict:
@@ -196,7 +200,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                   options.text_height * .85, 'VIP_MARKER')
     for j in range(n + 1):
         y = top - j * rh
-        _line(msp, left, y, end, y, 'PROFILE_BAND')
+        _line(msp, left, y, end, y, 'PROFILE_BAND')#수평선
     for x in (left, start, end):
         _line(msp, x, top, x, bottom, 'PROFILE_BAND')
     for j, name in enumerate(names):
@@ -206,7 +210,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     band_stations = sorted(set(_multiples(start, end, options.band_interval) + [start, end]))
     for sta in band_stations:
         if sta != start and sta != end:
-            _line(msp, sta, top, sta, bottom, 'PROFILE_BAND')
+            pass#밴드 내부 수직 그리드 제거
         g = raw_ground.at(sta)[0]
         p = raw_plan.at(sta)[0]
         cut = max(g - p, 0)
@@ -239,7 +243,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         _text(msp, _fmt_grade(a.gradient_out, options.grade_decimals),
               midpoint, grade_rule_y + ar * .45,
               options.text_height * 1.35, 'VIP_ANNOTATION')
-        _text(msp, _fmt_distance(b.sta - a.sta, options.distance_decimals),
+        _text(msp, _fmt_distance(b.sta - a.sta),
               midpoint, distance_rule_y + ar * .45,
               options.text_height * .9, 'VIP_ANNOTATION')
 
