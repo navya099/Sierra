@@ -38,6 +38,8 @@ class DrawingOptions:
     horizontal_scale: float = 1000.0
     origin_x: float = 0.0
     origin_y: float = 0.0
+    start_margin: float = 10.0  # output drawing units (mm)
+    end_margin: float = 10.0    # output drawing units (mm)
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -91,6 +93,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         raise ValueError('출력 축척은 양수여야 합니다.')
     if options.band_row_height <= 0 or options.text_height <= 0 or options.bottom_margin <= 0 or options.annotation_row_height <= 0 or options.vip_circle_radius <= 0:
         raise ValueError('밴드 높이, 문자 높이, 하단 여백은 양수여야 합니다.')
+    if not all(math.isfinite(v) and v >= 0 for v in (options.start_margin, options.end_margin)):
+        raise ValueError('좌우 마진은 0 이상의 유한한 수여야 합니다.')
     if options.station_interval <= 0 or options.major_interval <= 0 or options.band_interval <= 0:
         raise ValueError('그리드/밴드 간격은 양수여야 합니다.')
 
@@ -124,10 +128,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         return layout.elevation_y(el, graph_bottom, layout.band_top + 60.0,
                                   options.vertical_scale)
     def display_sta(sta):
-        return layout.station_x(sta, start, options.horizontal_scale)
+        # Start/end margins are geometric whitespace, NOT extra railway stationing.
+        return layout.station_x(sta, start, options.horizontal_scale) + options.start_margin
     graph_bottom_y = graph_base_y
-    data_left = display_sta(start)
-    data_right = display_sta(end)
+    data_left = layout.data_left_x  # left band/grade-rule boundary
+    data_right = display_sta(end) + options.end_margin  # right boundary
+    actual_start_x = display_sta(start)
+    actual_end_x = display_sta(end)
     label_left = layout.origin_x
     grade_rule_y = layout.grade_rule_y
     distance_rule_y = layout.distance_rule_y
@@ -200,19 +207,20 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     circle_stations = sorted(p.sta for p in vip
                              if p.kind.startswith('VIP') and start < p.sta < end)
     r = options.vip_circle_radius
-    cursor = data_left
+    # Grade/distance rules are inset inside the 10 mm margins.
+    cursor = actual_start_x
     for sta in circle_stations:
         x = display_sta(sta)
-        left_gap = max(data_left, x-r)
-        right_gap = min(data_right, x+r)
+        left_gap = max(actual_start_x, x-r)
+        right_gap = min(actual_end_x, x+r)
         if left_gap > cursor:
             _line(msp, cursor, grade_rule_y, left_gap, grade_rule_y,
                   'GRADE_DISTANCE_RULE')
         cursor = max(cursor, right_gap)
-    if cursor < data_right:
-        _line(msp, cursor, grade_rule_y, data_right, grade_rule_y,
+    if cursor < actual_end_x:
+        _line(msp, cursor, grade_rule_y, actual_end_x, grade_rule_y,
               'GRADE_DISTANCE_RULE')
-    _line(msp, data_left, distance_rule_y, data_right, distance_rule_y,
+    _line(msp, actual_start_x, distance_rule_y, actual_end_x, distance_rule_y,
           'GRADE_DISTANCE_RULE')
     for point in vip:
         if not (start - 1e-8 <= point.sta <= end + 1e-8):
@@ -258,6 +266,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'graph_bottom': graph_bottom, 'graph_bottom_y': graph_bottom_y,
         'origin_x': options.origin_x, 'origin_y': options.origin_y,
         'drawing_left': label_left, 'drawing_right': data_right,
+        'actual_start_x': actual_start_x, 'actual_end_x': actual_end_x,
+        'start_margin': options.start_margin, 'end_margin': options.end_margin,
         'grade_rule_y': grade_rule_y, 'distance_rule_y': distance_rule_y,
         'vip_circle_count': len(circle_stations),
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
@@ -273,6 +283,8 @@ def main():
     parser.add_argument('--band-interval', type=float, default=20, help='밴드 수치 간격(m)')
     parser.add_argument('--origin-x', type=float, default=0.0)
     parser.add_argument('--origin-y', type=float, default=0.0)
+    parser.add_argument('--start-margin', type=float, default=10.0, help='시작 여백(mm)')
+    parser.add_argument('--end-margin', type=float, default=10.0, help='종료 여백(mm)')
     parser.add_argument('--graph-bottom', type=float, help='종단면도 하단 기준 표고(m)')
     args = parser.parse_args()
     src = Path(args.source)
@@ -280,7 +292,8 @@ def main():
     result = create_profile_drawing(src, out, DrawingOptions(
         station_interval=args.grid, major_interval=args.major,
         band_interval=args.band_interval, graph_bottom=args.graph_bottom,
-        origin_x=args.origin_x, origin_y=args.origin_y))
+        origin_x=args.origin_x, origin_y=args.origin_y,
+        start_margin=args.start_margin, end_margin=args.end_margin))
     for key, val in result.items():
         print(f'{key}: {val}')
 
