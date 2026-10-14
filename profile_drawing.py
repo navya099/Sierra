@@ -32,7 +32,7 @@ class DrawingOptions:
     annotation_row_height: float = 6.0
     grade_decimals: int = 1
     distance_decimals: int = 2
-    vip_circle_radius: float = 2.2
+    vip_circle_radius: float = 8.0
     vip_elevation_decimals: int = 2
     vertical_scale: float = 400.0  # 1:V, reference horizontal scale 1:1000
     horizontal_scale: float = 1000.0
@@ -149,8 +149,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'GRID_MINOR', 8, 0)
     _layer(doc, 'GRID_MAJOR', 6, 18)
     _layer(doc, 'VIP_ANNOTATION', 1, 18)
-    _layer(doc, 'GRADE_DISTANCE_RULE', 7, 18)
-    _layer(doc, 'VIP_MARKER', 7, 18)
+    _layer(doc, 'GRADE_DISTANCE_RULE', 1, 18)
+    _layer(doc, 'VIP_MARKER', 1, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
     msp = doc.modelspace()
@@ -231,10 +231,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if point.kind.startswith('VIP') and start < point.sta < end:
             msp.add_circle((x, grade_rule_y), r, dxfattribs={'layer': 'VIP_MARKER'})
             _text(msp, f'{point.elevation:.{options.vip_elevation_decimals}f}',
-                  x, grade_rule_y, min(options.text_height*.75, r*.65),
+                  x, grade_rule_y, 2.4,
                   'VIP_MARKER', rotation=90)
             _text(msp, 'VC', x, grade_rule_y+r+options.text_height*.6,
-                  options.text_height*.85, 'VIP_MARKER')
+                  2.4, 'VIP_MARKER')
 
     ar = options.annotation_row_height
     for a, b in zip(vip, vip[1:]):
@@ -245,10 +245,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         midpoint = display_sta((left_sta + right_sta)/2)
         _text(msp, _fmt_grade(a.gradient_out, options.grade_decimals),
               midpoint, grade_rule_y + ar*.45,
-              options.text_height*1.35, 'VIP_ANNOTATION')
+              10, 'VIP_ANNOTATION')
         _text(msp, _fmt_distance(b.sta-a.sta),
               midpoint, distance_rule_y + ar*.45,
-              options.text_height*.9, 'VIP_ANNOTATION')
+              5, 'VIP_ANNOTATION')
 
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
