@@ -415,6 +415,7 @@ class AlignmentGUI:
         vertical_var = tk.StringVar(value='400')
         split_var = tk.StringVar(value='분할 안 함')
         datum_var = tk.BooleanVar(value=True)
+        alignment_var = tk.StringVar(value='')
         ttk.Label(frame, text='종단 축척 (1:V)').grid(row=0, column=0, sticky='w', padx=(0, 14), pady=8)
         entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
         entry.grid(row=0, column=1, sticky='ew', pady=8)
@@ -424,7 +425,15 @@ class AlignmentGUI:
         ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 10))
         ttk.Separator(frame).grid(row=4, column=0, columnspan=2, sticky='ew', pady=(4, 12))
         buttons = ttk.Frame(frame)
-        buttons.grid(row=5, column=0, columnspan=2, sticky='e')
+        ttk.Label(frame, text='평면선형 DXF (선택)').grid(row=5, column=0, sticky='w', pady=6)
+        ttk.Entry(frame, textvariable=alignment_var, width=42).grid(row=5, column=1, sticky='ew', pady=6)
+        def browse_alignment():
+            selected = filedialog.askopenfilename(parent=win, title='평면선형 DXF 선택',
+                filetypes=[('DXF 도면', '*.dxf')])
+            if selected:
+                alignment_var.set(selected)
+        ttk.Button(frame, text='평면선형 DXF 찾아보기', command=browse_alignment).grid(row=6, column=0, columnspan=2, sticky='w', pady=(0,8))
+        buttons.grid(row=7, column=0, columnspan=2, sticky='e')
         result = {'value': None}
         def accept():
             try:
@@ -434,7 +443,8 @@ class AlignmentGUI:
             except ValueError:
                 messagebox.showerror('축척 입력 오류', '종단 축척은 0보다 큰 숫자여야 합니다.', parent=win)
                 return
-            result['value'] = DrawingOptions(vertical_scale=v, auto_datum=datum_var.get())
+            result['value'] = DrawingOptions(vertical_scale=v, auto_datum=datum_var.get(),
+                horizontal_alignment_dxf=alignment_var.get().strip() or None)
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')

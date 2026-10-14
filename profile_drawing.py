@@ -17,6 +17,7 @@ from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
+from alignment_band import draw_alignment_band
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class DrawingOptions:
     start_margin: float = 10.0  # output drawing units (mm)
     end_margin: float = 10.0    # output drawing units (mm)
     auto_datum: bool = True
+    horizontal_alignment_dxf: str | None = None
     elevation_window_m: float = 60.0  # legacy compatibility; actual window derives from Y limits
     plot_lower_y: float = 150.0
     plot_upper_y: float = 250.0
@@ -177,6 +179,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'BAND_TEXT', 7, 0)
     _layer(doc, 'DATUM_BREAK', 6, 18)
     _layer(doc, 'DATUM_LABEL', 7, 0)
+    _layer(doc, 'ALIGNMENT_CURVE', 1, 25)
+    _layer(doc, 'ALIGNMENT_IP_TEXT', 1, 0)
     msp = doc.modelspace()
 
     def clipped(poly, fn, seg_start, seg_end):
@@ -309,6 +313,11 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             _text(msp, station_label, display_sta(sta),
                   layout.origin_y + layout.alignment_top - 3.0,
                   layout.data_text_height, 'BAND_TEXT')
+    alignment_info = {'curve_count': 0, 'curve_visible_count': 0, 'curve_source': None}
+    if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
+        alignment_info = draw_alignment_band(
+            msp, options.horizontal_alignment_dxf, start, end,
+            display_sta, layout.origin_y, _text, _line)
     # No internal vertical lines in the band: user-approved cleanup.
 
     circle_stations = sorted(p.sta for p in vip
@@ -381,6 +390,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
         'plot_lower_y': ylo, 'plot_upper_y': yhi,
         'datum_segment_count': len(datum_segments),
+        **alignment_info,
         'datum_break_count': len(datum_segments)-1,
         'datum_segments': [dict(start_sta=z.start_sta, end_sta=z.end_sta, datum_el=z.datum_el) for z in datum_segments],
     }
@@ -390,6 +400,7 @@ def main():
     parser = argparse.ArgumentParser(description='종단면도 final_result.dxf 생성 (1:1 설계 좌표)')
     parser.add_argument('source', help='converted_dxf.dxf')
     parser.add_argument('--output', help='결과 DXF 경로 (기본: 입력 폴더/final_result.dxf)')
+    parser.add_argument('--alignment-dxf', help='별도 평면선형 DXF (선택)')
     parser.add_argument('--grid', type=float, default=20, help='보조 그리드 간격(m)')
     parser.add_argument('--major', type=float, default=200, help='메인 그리드 간격(m)')
     parser.add_argument('--band-interval', type=float, default=20, help='밴드 수치 간격(m)')
@@ -411,7 +422,8 @@ def main():
         band_interval=args.band_interval, graph_bottom=args.graph_bottom,
         origin_x=args.origin_x, origin_y=args.origin_y,
         start_margin=args.start_margin, end_margin=args.end_margin,
-        auto_datum=not args.no_auto_datum, plot_lower_y=args.plot_lower_y,
+        auto_datum=not args.no_auto_datum, horizontal_alignment_dxf=args.alignment_dxf,
+        plot_lower_y=args.plot_lower_y,
         plot_upper_y=args.plot_upper_y,
         datum_step_m=args.datum_step, datum_safety_margin_m=args.datum_margin))
     for key, val in result.items():
