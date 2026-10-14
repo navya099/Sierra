@@ -414,15 +414,17 @@ class AlignmentGUI:
         frame.pack(fill='both', expand=True)
         vertical_var = tk.StringVar(value='400')
         split_var = tk.StringVar(value='분할 안 함')
+        datum_var = tk.BooleanVar(value=True)
         ttk.Label(frame, text='종단 축척 (1:V)').grid(row=0, column=0, sticky='w', padx=(0, 14), pady=8)
         entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
         entry.grid(row=0, column=1, sticky='ew', pady=8)
         ttk.Label(frame, text='종단 분할 옵션').grid(row=1, column=0, sticky='w', padx=(0, 14), pady=8)
         ttk.Combobox(frame, textvariable=split_var, values=['분할 안 함'], state='readonly', width=15).grid(row=1, column=1, sticky='ew', pady=8)
-        ttk.Label(frame, text='수평 1:1000 기준 · 수직 확대율 = 1000 / V', foreground='gray').grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 10))
-        ttk.Separator(frame).grid(row=3, column=0, columnspan=2, sticky='ew', pady=(4, 12))
+        ttk.Checkbutton(frame, text='Datum 표고 자동 적용 (종단 절단)', variable=datum_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 3))
+        ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 10))
+        ttk.Separator(frame).grid(row=4, column=0, columnspan=2, sticky='ew', pady=(4, 12))
         buttons = ttk.Frame(frame)
-        buttons.grid(row=4, column=0, columnspan=2, sticky='e')
+        buttons.grid(row=5, column=0, columnspan=2, sticky='e')
         result = {'value': None}
         def accept():
             try:
@@ -432,7 +434,7 @@ class AlignmentGUI:
             except ValueError:
                 messagebox.showerror('축척 입력 오류', '종단 축척은 0보다 큰 숫자여야 합니다.', parent=win)
                 return
-            result['value'] = DrawingOptions(vertical_scale=v)
+            result['value'] = DrawingOptions(vertical_scale=v, auto_datum=datum_var.get())
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
@@ -473,7 +475,8 @@ class AlignmentGUI:
         self.exporting = True
         self.export_button.configure(state='disabled')
         self.status_var.set('종단면도 생성 중')
-        self._log(f'종단면도 출력 시작: {target} / V=1:{drawing_options.vertical_scale:g} / 분할 없음')
+        datum_status = '적용' if drawing_options.auto_datum else '미적용'
+        self._log(f'종단면도 출력 시작: {target} / V=1:{drawing_options.vertical_scale:g} / 분할 없음 / Datum={datum_status}')
         generation = self.generation
         def work():
             try:
@@ -488,7 +491,7 @@ class AlignmentGUI:
         if self.last_vips:
             self.export_button.configure(state='normal')
         self.status_var.set('도면 출력 완료')
-        self._log(f"도면 출력 완료: {result['output']} / VIP {result['vip_circle_count']}개 / 밴드 측점 {result['band_station_count']}개")
+        self._log(f"도면 출력 완료: {result['output']} / VIP {result['vip_circle_count']}개 / 밴드 측점 {result['band_station_count']}개 / 기준 표고 구간 {result['datum_segment_count']}개")
         messagebox.showinfo('도면 출력 완료', f"final_result DXF 생성 완료\n\n{result['output']}\n\nCAD에서 열어 확인하세요.")
 
     def _export_failure(self, error):

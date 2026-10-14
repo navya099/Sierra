@@ -16,6 +16,7 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
+from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,12 @@ class DrawingOptions:
     origin_y: float = 0.0
     start_margin: float = 10.0  # output drawing units (mm)
     end_margin: float = 10.0    # output drawing units (mm)
+    auto_datum: bool = True
+    elevation_window_m: float = 60.0  # legacy compatibility; actual window derives from Y limits
+    plot_lower_y: float = 150.0
+    plot_upper_y: float = 250.0
+    datum_step_m: float = 10.0
+    datum_safety_margin_m: float = 5.0
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -110,23 +117,37 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     if end <= start:
         raise ValueError('지반선과 계획 종단선의 공통 측점 범위가 없습니다.')
 
-    # Graph baseline must be below both lines over the displayed interval.
-    relevant = [start, end]
-    relevant += [x for x, _ in ground_points if start < x < end]
-    relevant += [x for x, _ in plan_points if start < x < end]
-    lowest = min(min(ground.at(x)[0], plan.at(x)[0]) for x in relevant)
-    graph_bottom = (lowest - options.bottom_margin if options.graph_bottom is None
-                    else options.graph_bottom)
-    if graph_bottom >= lowest:
-        raise ValueError(f'종단면도 하단 표고({graph_bottom:.3f})는 최저 표고({lowest:.3f})보다 낮아야 합니다.')
-
-    # Local drawing coordinates: band lower-left is the temporary origin.
-    # All elevations and stations remain in source units until transformed.
+    # A datum change affects profile geometry only, never the band or stationing.
     layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
-    graph_base_y = layout.origin_y + layout.band_top + 60.0
-    def display_el(el):
-        return layout.elevation_y(el, graph_bottom, layout.band_top + 60.0,
+    graph_base_y = layout.origin_y + options.plot_lower_y
+    if options.auto_datum and options.graph_bottom is not None:
+        raise ValueError('자동 표고 기준과 수동 graph_bottom을 동시에 사용할 수 없습니다.')
+    if options.auto_datum:
+        datum_config = DatumConfig(
+            horizontal_scale=options.horizontal_scale,
+            vertical_scale=options.vertical_scale,
+            plot_lower_y=options.plot_lower_y,
+            plot_upper_y=options.plot_upper_y,
+            datum_step_m=options.datum_step_m,
+            safety_margin_m=options.datum_safety_margin_m,
+        )
+        datum_segments = plan_datum_segments(ground_points, plan_points, datum_config)
+    else:
+        relevant = [start, end]
+        relevant += [x for x, _ in ground_points if start < x < end]
+        relevant += [x for x, _ in plan_points if start < x < end]
+        lowest = min(min(ground.at(x)[0], plan.at(x)[0]) for x in relevant)
+        graph_bottom = (lowest - options.bottom_margin if options.graph_bottom is None
+                        else options.graph_bottom)
+        if graph_bottom >= lowest:
+            raise ValueError('수동 종단 기준 표고는 최저 표고보다 낮아야 합니다.')
+        datum_segments = [DatumSegment(start, end, graph_bottom)]
+    graph_bottom = datum_segments[0].datum_el
+
+    def display_el(el, datum_el):
+        return layout.elevation_y(el, datum_el, options.plot_lower_y,
                                   options.vertical_scale)
+
     def display_sta(sta):
         # Start/end margins are geometric whitespace, NOT extra railway stationing.
         return layout.station_x(sta, start, options.horizontal_scale) + options.start_margin
@@ -153,26 +174,97 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'VIP_MARKER', 1, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
+    _layer(doc, 'DATUM_BREAK', 6, 18)
+    _layer(doc, 'DATUM_LABEL', 7, 0)
     msp = doc.modelspace()
 
-    def clipped(poly, fn):
-        return [(start, fn.at(start)[0])] + [(x, y) for x, y in poly if start < x < end] + [(end, fn.at(end)[0])]
+    def clipped(poly, fn, seg_start, seg_end):
+        return ([(seg_start, fn.at(seg_start)[0])]
+                + [(x, y) for x, y in poly if seg_start < x < seg_end]
+                + [(seg_end, fn.at(seg_end)[0])])
 
-    for poly, fn, layer in ((ground_points, raw_ground, 'GROUND_PROFILE'),
-                            (plan_points, raw_plan, 'PLAN_PROFILE')):
-        msp.add_lwpolyline([(display_sta(x), display_el(y)) for x, y in clipped(poly, fn)],
-                           dxfattribs={'layer': layer})
+    # Plan is always visible; ground is clipped to the paper-space graph window.
+    from ezdxf.math import Vec2
+    ylo = layout.origin_y + options.plot_lower_y
+    yhi = layout.origin_y + options.plot_upper_y
+    def clipped_ground_parts(vertices, datum):
+        parts=[]; current=[]
+        for (xa,ea),(xb,eb) in zip(vertices, vertices[1:]):
+            ya=display_el(ea,datum); yb=display_el(eb,datum)
+            t0,t1=0.0,1.0
+            dy=yb-ya
+            if abs(dy)<1e-12:
+                if not (ylo<=ya<=yhi):
+                    if len(current)>=2: parts.append(current)
+                    current=[]
+                    continue
+            else:
+                ta=(ylo-ya)/dy; tb=(yhi-ya)/dy
+                t0=max(0.0,min(ta,tb));t1=min(1.0,max(ta,tb))
+            if t1<t0-1e-10:
+                if len(current)>=2: parts.append(current)
+                current=[]
+                continue
+            a=(display_sta(xa+(xb-xa)*t0), ya+dy*t0)
+            b=(display_sta(xa+(xb-xa)*t1), ya+dy*t1)
+            if current and (abs(current[-1][0]-a[0])>1e-7 or abs(current[-1][1]-a[1])>1e-7):
+                if len(current)>=2: parts.append(current)
+                current=[]
+            if not current: current=[a]
+            if abs(a[0]-b[0])>1e-8 or abs(a[1]-b[1])>1e-8: current.append(b)
+            if t1<1-1e-9:
+                if len(current)>=2: parts.append(current)
+                current=[]
+        if len(current)>=2: parts.append(current)
+        return parts
+    for seg in datum_segments:
+        pv=clipped(plan_points,raw_plan,seg.start_sta,seg.end_sta)
+        msp.add_lwpolyline([(display_sta(x),display_el(y,seg.datum_el)) for x,y in pv],
+                           dxfattribs={'layer':'PLAN_PROFILE'})
+        gv=clipped(ground_points,raw_ground,seg.start_sta,seg.end_sta)
+        if options.auto_datum:
+            for part in clipped_ground_parts(gv,seg.datum_el):
+                msp.add_lwpolyline(part,dxfattribs={'layer':'GROUND_PROFILE'})
+        else:
+            msp.add_lwpolyline([(display_sta(x), display_el(y,seg.datum_el)) for x,y in gv],
+                               dxfattribs={'layer':'GROUND_PROFILE'})
 
     minor = _multiples(start, end, options.station_interval)
     major = _multiples(start, end, options.major_interval)
     major_set = set(major)
+
+    # At exact cuts use the datum of the segment on the right.
+    from bisect import bisect_right
+    cut_stations = [seg.end_sta for seg in datum_segments[:-1]]
+    def datum_at(sta):
+        idx = bisect_right(cut_stations, sta)
+        return datum_segments[min(idx, len(datum_segments)-1)].datum_el
+
     for sta in minor:
         if sta not in major_set:
-            _line(msp, display_sta(sta), display_el(raw_ground.at(sta)[0]),
-                  display_sta(sta), top, 'GRID_MINOR')
+            _line(msp, display_sta(sta), (max(ylo,min(yhi,display_el(raw_ground.at(sta)[0], datum_at(sta))))
+                   if options.auto_datum else display_el(raw_ground.at(sta)[0], datum_at(sta))),
+                  display_sta(sta), layout.origin_y + layout.band_top, 'GRID_MINOR')
     for sta in major:
-        _line(msp, display_sta(sta), display_el(raw_ground.at(sta)[0]),
-              display_sta(sta), top, 'GRID_MAJOR')
+        _line(msp, display_sta(sta), (max(ylo,min(yhi,display_el(raw_ground.at(sta)[0], datum_at(sta))))
+                   if options.auto_datum else display_el(raw_ground.at(sta)[0], datum_at(sta))),
+              display_sta(sta), layout.origin_y + layout.band_top, 'GRID_MAJOR')
+
+    # The band remains continuous; datum change marker exists only above band.
+    if options.auto_datum:
+        for left, right in zip(datum_segments, datum_segments[1:]):
+            x = display_sta(left.end_sta)
+            y0 = layout.origin_y + layout.band_top
+            y1 = yhi
+            # Vertical break line with small zig-zag at the middle.
+            ym = (y0 + y1) / 2
+            points = [(x, y0), (x, ym-7), (x-2.5, ym-3),
+                      (x+2.5, ym+3), (x, ym+7), (x, y1)]
+            msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
+            _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
+                  2.4, 'DATUM_LABEL')
+            _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
+                  2.4, 'DATUM_LABEL')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
@@ -226,7 +318,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if not (start - 1e-8 <= point.sta <= end + 1e-8):
             continue
         x = display_sta(point.sta)
-        _line(msp, x, display_el(point.elevation), x, top,
+        _line(msp, x, display_el(point.elevation, datum_at(point.sta)), x, top,
               'VIP_ANNOTATION')
         if point.kind.startswith('VIP') and start < point.sta < end:
             msp.add_circle((x, grade_rule_y), r, dxfattribs={'layer': 'VIP_MARKER'})
@@ -245,10 +337,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         midpoint = display_sta((left_sta + right_sta)/2)
         _text(msp, _fmt_grade(a.gradient_out, options.grade_decimals),
               midpoint, grade_rule_y + ar*.45,
-              10, 'VIP_ANNOTATION')
+              10.0, 'VIP_ANNOTATION')
         _text(msp, _fmt_distance(b.sta-a.sta),
               midpoint, distance_rule_y + ar*.45,
-              5, 'VIP_ANNOTATION')
+              5.0, 'VIP_ANNOTATION')
 
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
@@ -271,6 +363,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'grade_rule_y': grade_rule_y, 'distance_rule_y': distance_rule_y,
         'vip_circle_count': len(circle_stations),
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
+        'plot_lower_y': ylo, 'plot_upper_y': yhi,
+        'datum_segment_count': len(datum_segments),
+        'datum_break_count': len(datum_segments)-1,
+        'datum_segments': [dict(start_sta=z.start_sta, end_sta=z.end_sta, datum_el=z.datum_el) for z in datum_segments],
     }
 
 
@@ -285,7 +381,12 @@ def main():
     parser.add_argument('--origin-y', type=float, default=0.0)
     parser.add_argument('--start-margin', type=float, default=10.0, help='시작 여백(mm)')
     parser.add_argument('--end-margin', type=float, default=10.0, help='종료 여백(mm)')
-    parser.add_argument('--graph-bottom', type=float, help='종단면도 하단 기준 표고(m)')
+    parser.add_argument('--graph-bottom', type=float, help='수동 모드에서만 사용')
+    parser.add_argument('--no-auto-datum', action='store_true', help='자동 기준 표고 변경 끄기')
+    parser.add_argument('--plot-lower-y', type=float, default=150.0)
+    parser.add_argument('--plot-upper-y', type=float, default=250.0)
+    parser.add_argument('--datum-step', type=float, default=10.0, help='기준 표고 단위(m)')
+    parser.add_argument('--datum-margin', type=float, default=5.0, help='표고 창 상하 안전 여유(m)')
     args = parser.parse_args()
     src = Path(args.source)
     out = Path(args.output) if args.output else src.with_name('final_result.dxf')
@@ -293,7 +394,10 @@ def main():
         station_interval=args.grid, major_interval=args.major,
         band_interval=args.band_interval, graph_bottom=args.graph_bottom,
         origin_x=args.origin_x, origin_y=args.origin_y,
-        start_margin=args.start_margin, end_margin=args.end_margin))
+        start_margin=args.start_margin, end_margin=args.end_margin,
+        auto_datum=not args.no_auto_datum, plot_lower_y=args.plot_lower_y,
+        plot_upper_y=args.plot_upper_y,
+        datum_step_m=args.datum_step, datum_safety_margin_m=args.datum_margin))
     for key, val in result.items():
         print(f'{key}: {val}')
 
