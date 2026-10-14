@@ -24,6 +24,7 @@ class DrawingOptions:
     station_interval: float = 20.0
     major_interval: float = 200.0
     band_interval: float = 20.0
+    alignment_station_interval: float = 200.0  # 평면선형 밴드 측점 표기 간격(m)
     graph_bottom: float | None = None
     bottom_margin: float = 12.0
     band_row_height: float = 6.0
@@ -170,7 +171,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'GRID_MINOR', 8, 0)
     _layer(doc, 'GRID_MAJOR', 6, 18)
     _layer(doc, 'VIP_ANNOTATION', 1, 18)
-    _layer(doc, 'GRADE_DISTANCE_RULE', 1, 18)
+    _layer(doc, 'GRADE_DISTANCE_RULE', 7, 18)
     _layer(doc, 'VIP_MARKER', 1, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
@@ -294,6 +295,20 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             _text(msp, f'{value:.2f}', display_sta(sta),
                   layout.origin_y+(low+high)/2,
                   layout.data_text_height, 'BAND_TEXT', rotation=90)
+    # 준공도면 평면선형 밴드: 200m마다 수평 측점 숫자 표시.
+    # Datum 구간과 무관한 원래 측점 좌표를 사용한다.
+    alignment_stations = _multiples(start, end, options.alignment_station_interval)
+    if options.include_alignment_placeholder:
+        for sta in alignment_stations:
+            # 1km 정측점은 1km, 2km, ... ; 나머지는 200, 400, 600, 800.
+            station_m = int(round(sta))
+            station_label = (f'{station_m // 1000}km'
+                             if station_m % 1000 == 0
+                             else str(station_m % 1000))
+            # 평면선형 밴드 상단(Y=20)에서 3mm 아래.
+            _text(msp, station_label, display_sta(sta),
+                  layout.origin_y + layout.alignment_top - 3.0,
+                  layout.data_text_height, 'BAND_TEXT')
     # No internal vertical lines in the band: user-approved cleanup.
 
     circle_stations = sorted(p.sta for p in vip
@@ -355,6 +370,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'output': str(output), 'start': start, 'end': end,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
         'major_grid_count': len(major), 'band_station_count': len(band_stations),
+        'alignment_station_count': len(alignment_stations) if options.include_alignment_placeholder else 0,
         'graph_bottom': graph_bottom, 'graph_bottom_y': graph_bottom_y,
         'origin_x': options.origin_x, 'origin_y': options.origin_y,
         'drawing_left': label_left, 'drawing_right': data_right,
