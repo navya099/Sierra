@@ -148,7 +148,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'PLAN_PROFILE', 1, 100)
     _layer(doc, 'GRID_MINOR', 8, 0)
     _layer(doc, 'GRID_MAJOR', 6, 18)
-    _layer(doc, 'VIP_ANNOTATION', 7, 18)
+    _layer(doc, 'VIP_ANNOTATION', 1, 18)
     _layer(doc, 'GRADE_DISTANCE_RULE', 7, 18)
     _layer(doc, 'VIP_MARKER', 7, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
@@ -169,10 +169,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     for sta in minor:
         if sta not in major_set:
             _line(msp, display_sta(sta), display_el(raw_ground.at(sta)[0]),
-                  display_sta(sta), graph_bottom_y, 'GRID_MINOR')
+                  display_sta(sta), top, 'GRID_MINOR')
     for sta in major:
         _line(msp, display_sta(sta), display_el(raw_ground.at(sta)[0]),
-              display_sta(sta), graph_bottom_y, 'GRID_MAJOR')
+              display_sta(sta), top, 'GRID_MAJOR')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
@@ -226,7 +226,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if not (start - 1e-8 <= point.sta <= end + 1e-8):
             continue
         x = display_sta(point.sta)
-        _line(msp, x, display_el(point.elevation), x, graph_bottom_y,
+        _line(msp, x, display_el(point.elevation), x, top,
               'VIP_ANNOTATION')
         if point.kind.startswith('VIP') and start < point.sta < end:
             msp.add_circle((x, grade_rule_y), r, dxfattribs={'layer': 'VIP_MARKER'})
