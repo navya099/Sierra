@@ -8,6 +8,7 @@ from bisect import bisect_right
 import math
 from pathlib import Path
 import ezdxf
+from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 
 LAYERS = ('PLAN_VIP_LINE', 'PLAN_GRADE_IN_LINE', 'PLAN_GRADE_OUT_LINE',
@@ -44,9 +45,11 @@ def position_at(sta, points, distances):
 
 def fmt_grade(v):
     if abs(v)<1e-8: return 'L'
-    return f'{v:.3f}'.rstrip('0').rstrip('.')
+    display = f'{v:.1f}'
+    if display in ('0.0', '-0.0'): return '0'
+    return display.rstrip('0').rstrip('.')
 
-def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=4.):
+def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=3.):
     """Local x=forward tangent; local y=left normal. Stem from FL toward left.
 
     +grade is rising in forward station direction. Symbol angle is fixed +/-30 deg.
@@ -64,14 +67,23 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
             text_xy=(-vx-0.8,stem-vy+1.0)
         else:
             start=pivot;end=(vx,stem+vy)
-            text_xy=(vx-2.0,stem+vy+2.0)
+            # Anchor the right end of the text just before the arm endpoint.
+            # Right alignment guarantees that even the last decimal digit
+            # stays inside the OUT arm (independent of text length).
+            ux,uy=math.cos(angle),math.sin(angle)
+            text_xy=(vx-0.65*ux-0.65*uy,
+                     stem+vy-0.65*uy+0.65*ux)
         msp.add_line(tr(*start),tr(*end),dxfattribs={'layer':f'PLAN_GRADE_{side}_LINE'})
         rotation=(math.degrees(math.atan2(ty,tx))+math.degrees(angle))%360
-        msp.add_text(fmt_grade(grade),dxfattribs={
+        label = msp.add_text(fmt_grade(grade),dxfattribs={
             'layer':f'PLAN_GRADE_{side}_TEXT','height':text_height,
-            'rotation':rotation,'insert':tr(*text_xy)})
+            'rotation':rotation})
+        if side == 'OUT':
+            label.set_placement(tr(*text_xy), align=TextEntityAlignment.RIGHT)
+        else:
+            label.dxf.insert = tr(*text_xy)
 
-def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=4., vips=None):
+def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=3., vips=None):
     plan_dxf=Path(plan_dxf).resolve();profile_dxf=Path(profile_dxf).resolve();output_dxf=Path(output_dxf).resolve()
     if output_dxf in (plan_dxf,profile_dxf): raise ValueError('Output must differ from both source DXFs')
     if not all(math.isfinite(x) for x in (station_origin,stem,arm,text_height)) or min(stem,arm,text_height)<=0:
