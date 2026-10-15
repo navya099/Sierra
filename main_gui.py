@@ -22,6 +22,7 @@ from dxf_watcher import DXFWatcher
 from profile_scale import ProfileScale
 from profile_drawing import DrawingOptions, create_profile_drawing
 from final_plan_vip import create_final_plan
+from vertical_curve import VerticalAlignment
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -84,6 +85,8 @@ class AlignmentGUI:
         self.dxf_path: Path | None = None
         self.last_vips = []
         self.last_stations = []
+        self.vc_lengths = {}  # station (m) -> full vertical-curve length (m)
+        self.vc_alignment = None
         self.events: queue.Queue = queue.Queue()
         self.stop_event: threading.Event | None = None
         self.worker: threading.Thread | None = None
@@ -161,11 +164,24 @@ class AlignmentGUI:
         vip_frame = ttk.Frame(tabs)
         station_frame = ttk.Frame(tabs)
         log_frame = ttk.Frame(tabs)
+        vc_frame = ttk.Frame(tabs)
         tabs.add(vip_frame, text='VIP 분석')
         tabs.add(station_frame, text='증분측점 계산')
         tabs.add(log_frame, text='실행 로그')
+        tabs.add(vc_frame, text='종곡선 설계 (시험)')
         self.vip_tree = self._make_tree(vip_frame, ['구분', 'STA', 'EL', '진입(‰)', '진출(‰)', '변화(‰)'])
         self.station_tree = self._make_tree(station_frame, ['STA', '지반고', '계획고', '표고차', '구배(‰)', '구분'])
+        vc_controls = ttk.Frame(vc_frame)
+        vc_controls.pack(fill='x', pady=5)
+        ttk.Label(vc_controls, text='선택 VIP 종곡선 길이 L (m)').pack(side='left', padx=5)
+        self.vc_length_var = tk.StringVar(value='0')
+        ttk.Entry(vc_controls, textvariable=self.vc_length_var, width=12).pack(side='left', padx=5)
+        ttk.Button(vc_controls, text='길이 적용', command=self.apply_vc_length).pack(side='left', padx=5)
+        ttk.Button(vc_controls, text='종곡선 계산', command=self.rebuild_vertical_curves).pack(side='left', padx=5)
+        ttk.Button(vc_controls, text='계산 결과 CSV 저장', command=self.export_vc_csv).pack(side='left', padx=5)
+        ttk.Label(vc_frame, text='내부 VIP 선택 후 L 입력 (0은 종곡선 없음). PVC/PVT와 중심 설계고를 비교합니다. 기존 DXF 출력에는 아직 반영되지 않습니다.').pack(fill='x', padx=5)
+        self.vc_tree = self._make_tree(vc_frame, ['VIP', 'STA', '접선교점 EL', 'L(m)', 'PVC', 'PVT', '종곡선 중심 EL', '중심 차이(m)'])
+        self.vc_tree.bind('<<TreeviewSelect>>', self._on_vc_select)
         self.log_text = tk.Text(log_frame, wrap='word', height=12, state='disabled', font=('Consolas', 10))
         log_scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
@@ -250,6 +266,7 @@ class AlignmentGUI:
             return
         self.stop_watch()
         self.dxf_path = path
+        self.vc_lengths.clear()
         self.file_var.set(str(path))
         self._clear_results()
         self.status_var.set('DXF 감시 준비')
@@ -363,6 +380,8 @@ class AlignmentGUI:
             tree.delete(*tree.get_children())
         self.last_vips = []
         self.last_stations = []
+        self.vc_alignment = None
+        self.vc_tree.delete(*self.vc_tree.get_children())
         self.export_button.configure(state='disabled')
         self.range_var.set('—')
         self.vip_count_var.set('—')
@@ -385,7 +404,105 @@ class AlignmentGUI:
         self.max_grade_var.set(f'{max(grades):.3f}‰' if grades else '—')
         self.range_var.set(f'{stations[0].sta:.3f} ~ {stations[-1].sta:.3f} m' if stations else '—')
         self.status_var.set('분석 완료 / 감시 중' if self.auto_var.get() else '분석 완료')
+        self._refresh_vc_table()
         self._log(f'분석 완료: VIP {max(0,len(vips)-2)}개, 측점 {len(stations)}개 / CSV 갱신')
+
+    def _on_vc_select(self, _event=None):
+        selected = self.vc_tree.selection()
+        if selected:
+            index = int(selected[0])
+            if 0 < index < len(self.last_vips) - 1:
+                self.vc_length_var.set(f'{self.vc_lengths.get(self.last_vips[index].sta, 0):g}')
+
+    def apply_vc_length(self):
+        selected = self.vc_tree.selection()
+        if not selected:
+            messagebox.showinfo('종곡선', '먼저 내부 VIP 행을 선택하세요.')
+            return
+        index = int(selected[0])
+        if not 0 < index < len(self.last_vips) - 1:
+            messagebox.showwarning('종곡선', 'BP/EP에는 종곡선을 지정할 수 없습니다.')
+            return
+        try:
+            length = float(self.vc_length_var.get())
+            if not math.isfinite(length) or length < 0:
+                raise ValueError('L은 0 이상의 유한한 값이어야 합니다.')
+            lengths = dict(self.vc_lengths)
+            sta = self.last_vips[index].sta
+            if length == 0:
+                lengths.pop(sta, None)
+            else:
+                lengths[sta] = length
+            self._make_vc_alignment(lengths)  # validate before committing
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror('종곡선 길이 오류', str(exc))
+            return
+        self.vc_lengths = lengths
+        self._refresh_vc_table(select_index=index)
+        self._log(f'종곡선 길이 적용: VIP {index}, STA {sta:.3f}, L={length:g}m')
+
+    def _make_vc_alignment(self, lengths):
+        points = [(p.sta, p.elevation) for p in self.last_vips]
+        if len(points) < 2:
+            raise ValueError('종단 분석을 먼저 완료하세요.')
+        indexes = {p.sta: i for i, p in enumerate(self.last_vips)}
+        active = {indexes[sta]: L for sta, L in lengths.items() if sta in indexes and L > 0}
+        return VerticalAlignment(points, active)
+
+    def _refresh_vc_table(self, select_index=None):
+        self.vc_tree.delete(*self.vc_tree.get_children())
+        self.vc_alignment = None
+        if len(self.last_vips) < 2:
+            return
+        try:
+            alignment = self._make_vc_alignment(self.vc_lengths)
+        except ValueError as exc:
+            self._log(f'종곡선 재계산 오류: {exc}')
+            return
+        self.vc_alignment = alignment
+        curves = {c.vip_index: c for c in alignment.curves}
+        for i, p in enumerate(self.last_vips):
+            curve = curves.get(i)
+            center = curve.evaluate(p.sta)[0] if curve else p.elevation
+            row = (p.kind, f'{p.sta:.3f}', f'{p.elevation:.3f}',
+                   f'{curve.length:g}' if curve else '0',
+                   f'{curve.pvc_sta:.3f}' if curve else '—',
+                   f'{curve.pvt_sta:.3f}' if curve else '—',
+                   f'{center:.3f}', f'{center - p.elevation:+.3f}')
+            self.vc_tree.insert('', 'end', iid=str(i), values=row)
+        if select_index is not None:
+            self.vc_tree.selection_set(str(select_index))
+            self.vc_tree.see(str(select_index))
+
+    def rebuild_vertical_curves(self):
+        self._refresh_vc_table()
+        if self.vc_alignment is not None:
+            self._log(f'종곡선 계산 완료: {len(self.vc_alignment.curves)}개')
+
+    def export_vc_csv(self):
+        if self.vc_alignment is None:
+            messagebox.showwarning('종곡선', '종곡선 계산 결과가 없습니다.')
+            return
+        path = filedialog.asksaveasfilename(title='종곡선 계산 결과 CSV', defaultextension='.csv',
+                                            initialfile='vertical_curve_result.csv',
+                                            filetypes=[('CSV 파일', '*.csv')])
+        if not path:
+            return
+        import csv
+        try:
+            with open(path, 'w', newline='', encoding='utf-8-sig') as file:
+                writer = csv.writer(file)
+                writer.writerow(['VIP', 'VIP_STA', 'VIP_EL', 'L', 'PVC_STA', 'PVC_EL',
+                                 'PVT_STA', 'PVT_EL', 'IN_GRADE_PERMILLE', 'OUT_GRADE_PERMILLE',
+                                 'CURVE_CENTER_EL', 'CENTER_DIFF'])
+                for c in self.vc_alignment.curves:
+                    center = c.evaluate(c.vip_sta)[0]
+                    writer.writerow([c.vip_index, c.vip_sta, c.vip_elevation, c.length,
+                                     c.pvc_sta, c.pvc_elevation, c.pvt_sta, c.pvt_elevation,
+                                     c.in_grade, c.out_grade, center, center-c.vip_elevation])
+            self._log(f'종곡선 계산 CSV 저장: {path}')
+        except OSError as exc:
+            messagebox.showerror('CSV 저장 실패', str(exc))
 
     def open_folder(self):
         if self.dxf_path is None:
