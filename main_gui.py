@@ -21,6 +21,7 @@ import ezdxf
 from dxf_watcher import DXFWatcher
 from profile_scale import ProfileScale
 from profile_drawing import DrawingOptions, create_profile_drawing
+from final_plan_vip import create_final_plan
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -100,7 +101,7 @@ class AlignmentGUI:
         file_menu.add_command(label='지반고 TXT 불러오기', command=self.open_txt)
         file_menu.add_command(label='설계 DXF 불러오기', command=self.open_dxf)
         file_menu.add_separator()
-        file_menu.add_command(label='종단면도 DXF 출력', command=self.export_drawing)
+        file_menu.add_command(label='도면 출력 DXF', command=self.export_drawing)
         file_menu.add_command(label='결과 CSV 폴더 열기', command=self.open_folder)
         file_menu.add_separator()
         file_menu.add_command(label='종료', command=self.close)
@@ -348,10 +349,8 @@ class AlignmentGUI:
                     continue
                 if kind == 'update':
                     self._show_results(*data)
-                elif kind == 'export_ok':
-                    self._export_success(data)
-                elif kind == 'export_error':
-                    self._export_failure(data)
+                elif kind == 'export_summary':
+                    self._export_summary(data)
                 elif kind == 'error':
                     self.status_var.set('분석 대기 / 오류')
                     self._log(f'분석 대기/오류: {data}')
@@ -415,7 +414,9 @@ class AlignmentGUI:
         vertical_var = tk.StringVar(value='400')
         split_var = tk.StringVar(value='분할 안 함')
         datum_var = tk.BooleanVar(value=True)
-        alignment_var = tk.StringVar(value='')
+        alignment_var = tk.StringVar(value=getattr(self, 'last_alignment_dxf', ''))
+        profile_var = tk.BooleanVar(value=True)
+        plan_var = tk.BooleanVar(value=bool(alignment_var.get()))
         ttk.Label(frame, text='종단 축척 (1:V)').grid(row=0, column=0, sticky='w', padx=(0, 14), pady=8)
         entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
         entry.grid(row=0, column=1, sticky='ew', pady=8)
@@ -423,17 +424,19 @@ class AlignmentGUI:
         ttk.Combobox(frame, textvariable=split_var, values=['분할 안 함'], state='readonly', width=15).grid(row=1, column=1, sticky='ew', pady=8)
         ttk.Checkbutton(frame, text='Datum 표고 자동 적용 (종단 절단)', variable=datum_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 3))
         ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 10))
-        ttk.Separator(frame).grid(row=4, column=0, columnspan=2, sticky='ew', pady=(4, 12))
+        ttk.Checkbutton(frame, text='종평면도 출력 (final_result.dxf)', variable=profile_var).grid(row=4, column=0, columnspan=2, sticky='w')
+        ttk.Checkbutton(frame, text='최종 평면도 출력 (final_plan_result.dxf)', variable=plan_var).grid(row=5, column=0, columnspan=2, sticky='w')
         buttons = ttk.Frame(frame)
-        ttk.Label(frame, text='평면선형 DXF (선택)').grid(row=5, column=0, sticky='w', pady=6)
-        ttk.Entry(frame, textvariable=alignment_var, width=42).grid(row=5, column=1, sticky='ew', pady=6)
+        ttk.Label(frame, text='평면선형 DXF (원본)').grid(row=6, column=0, sticky='w', pady=6)
+        ttk.Entry(frame, textvariable=alignment_var, width=42).grid(row=6, column=1, sticky='ew', pady=6)
         def browse_alignment():
             selected = filedialog.askopenfilename(parent=win, title='평면선형 DXF 선택',
                 filetypes=[('DXF 도면', '*.dxf')])
             if selected:
                 alignment_var.set(selected)
-        ttk.Button(frame, text='평면선형 DXF 찾아보기', command=browse_alignment).grid(row=6, column=0, columnspan=2, sticky='w', pady=(0,8))
-        buttons.grid(row=7, column=0, columnspan=2, sticky='e')
+                plan_var.set(True)
+        ttk.Button(frame, text='평면선형 DXF 찾아보기', command=browse_alignment).grid(row=7, column=0, columnspan=2, sticky='w', pady=(0,8))
+        buttons.grid(row=8, column=0, columnspan=2, sticky='e')
         result = {'value': None}
         def accept():
             try:
@@ -443,8 +446,16 @@ class AlignmentGUI:
             except ValueError:
                 messagebox.showerror('축척 입력 오류', '종단 축척은 0보다 큰 숫자여야 합니다.', parent=win)
                 return
-            result['value'] = DrawingOptions(vertical_scale=v, auto_datum=datum_var.get(),
-                horizontal_alignment_dxf=alignment_var.get().strip() or None)
+            if not profile_var.get() and not plan_var.get():
+                messagebox.showerror('출력 옵션', '최소 한 종류의 출력을 선택하세요.', parent=win)
+                return
+            plan_path = alignment_var.get().strip()
+            if plan_var.get() and (not plan_path or not Path(plan_path).is_file()):
+                messagebox.showerror('평면선형 DXF', '최종 평면도 출력에는 유효한 평면선형 DXF가 필요합니다.', parent=win)
+                return
+            self.last_alignment_dxf = plan_path
+            result['value'] = (DrawingOptions(vertical_scale=v, auto_datum=datum_var.get(),
+                horizontal_alignment_dxf=plan_path or None), profile_var.get(), plan_var.get())
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
@@ -458,59 +469,77 @@ class AlignmentGUI:
         return result['value']
 
     def export_drawing(self):
-        """Generate final_result.dxf in a worker, leaving source DXF untouched."""
+        """Export selected drawing(s) independently, preserving both input DXFs."""
         if self.exporting:
             return
         if self.dxf_path is None or not self.last_vips or not self.last_stations:
             messagebox.showwarning('도면 출력', '먼저 DXF를 불러와 종단 분석을 완료하세요.')
             return
-        drawing_options = self._print_options()
-        if drawing_options is None:
+        choice = self._print_options()
+        if choice is None:
             return
-        source = self.dxf_path
-        proposed = source.with_name('final_result.dxf')
-        filename = filedialog.asksaveasfilename(
-            title='종단면도 DXF 저장', initialdir=str(source.parent),
-            initialfile=proposed.name, defaultextension='.dxf',
-            filetypes=[('DXF 도면', '*.dxf')])
-        if not filename:
+        drawing_options, export_profile, export_plan = choice
+        source = self.dxf_path.resolve()
+        plan_source = Path(drawing_options.horizontal_alignment_dxf).resolve() if drawing_options.horizontal_alignment_dxf else None
+        if export_plan and plan_source == source:
+            messagebox.showerror('도면 출력', '평면선형 원본과 종단 설계 DXF는 별도 파일이어야 합니다.')
             return
-        target = Path(filename).expanduser().resolve()
-        if target == source.resolve():
-            messagebox.showerror('도면 출력', '설계용 DXF를 출력 대상으로 지정할 수 없습니다.')
+        directory = filedialog.askdirectory(title='DXF 출력 폴더 선택', initialdir=str(source.parent))
+        if not directory:
             return
-        if target.exists() and not messagebox.askyesno(
-                '출력 파일 덮어쓰기', f'기존 출력 도면을 교체하시겠습니까?\n{target}\n\nCAD에서 해당 파일을 열어 두었다면 먼저 닫아주세요.'):
+        folder = Path(directory).resolve()
+        targets = []
+        if export_profile:
+            targets.append(folder / 'final_result.dxf')
+        if export_plan:
+            targets.append(folder / 'final_plan_result.dxf')
+        if any(t.resolve() == source or (plan_source and t.resolve() == plan_source) for t in targets):
+            messagebox.showerror('도면 출력', '출력 파일이 입력 원본과 충돌합니다. 다른 폴더를 선택하세요.')
+            return
+        existing = [str(t) for t in targets if t.exists()]
+        if existing and not messagebox.askyesno('출력 파일 덮어쓰기',
+                '다음 결과 파일을 덮어쓰시겠습니까?\n' + '\n'.join(existing) +
+                '\n\nCAD에서 파일을 닫은 뒤 진행하세요.'):
             return
         self.exporting = True
         self.export_button.configure(state='disabled')
-        self.status_var.set('종단면도 생성 중')
-        datum_status = '적용' if drawing_options.auto_datum else '미적용'
-        self._log(f'종단면도 출력 시작: {target} / V=1:{drawing_options.vertical_scale:g} / 분할 없음 / Datum={datum_status}')
+        self.status_var.set('도면 출력 중')
+        self._log('DXF 출력 시작: ' + ', '.join(str(t) for t in targets))
         generation = self.generation
+        # Snapshot the final analyzed VIP data so both outputs share the same design state.
+        vips = tuple(self.last_vips)
         def work():
-            try:
-                result = create_profile_drawing(source, target, drawing_options)
-                self.events.put((generation, 'export_ok', result))
-            except Exception as exc:
-                self.events.put((generation, 'export_error', str(exc)))
+            successes, failures = [], []
+            if export_profile:
+                try:
+                    result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options)
+                    successes.append(('종평면도', str(result['output']), len(vips)))
+                except Exception as exc:
+                    failures.append(('종평면도', str(exc)))
+            if export_plan:
+                try:
+                    placed = create_final_plan(plan_source, source, folder / 'final_plan_result.dxf', vips=vips)
+                    successes.append(('최종 평면도', str(folder / 'final_plan_result.dxf'), len(placed)))
+                except Exception as exc:
+                    failures.append(('최종 평면도', str(exc)))
+            self.events.put((generation, 'export_summary', (successes, failures)))
         threading.Thread(target=work, daemon=True).start()
 
-    def _export_success(self, result):
+    def _export_summary(self, summary):
+        successes, failures = summary
         self.exporting = False
         if self.last_vips:
             self.export_button.configure(state='normal')
-        self.status_var.set('도면 출력 완료')
-        self._log(f"도면 출력 완료: {result['output']} / VIP {result['vip_circle_count']}개 / 밴드 측점 {result['band_station_count']}개 / 기준 표고 구간 {result['datum_segment_count']}개")
-        messagebox.showinfo('도면 출력 완료', f"final_result DXF 생성 완료\n\n{result['output']}\n\nCAD에서 열어 확인하세요.")
-
-    def _export_failure(self, error):
-        self.exporting = False
-        if self.last_vips:
-            self.export_button.configure(state='normal')
-        self.status_var.set('도면 출력 오류')
-        self._log(f'도면 출력 실패: {error}')
-        messagebox.showerror('도면 출력 실패', error)
+        lines = [f'{name}: 저장 완료 (VIP {count}개)\n{path}' for name, path, count in successes]
+        lines += [f'{name}: 실패 - {reason}' for name, reason in failures]
+        for line in lines:
+            self._log(line)
+        self.status_var.set('도면 출력 완료' if not failures else '도면 출력 일부 실패' if successes else '도면 출력 실패')
+        message = '\n\n'.join(lines)
+        if failures:
+            messagebox.showwarning('도면 출력 결과', message)
+        else:
+            messagebox.showinfo('도면 출력 완료', message)
 
     def show_manual(self):
         win = tk.Toplevel(self.root)

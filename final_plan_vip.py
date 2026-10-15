@@ -43,8 +43,8 @@ def position_at(sta, points, distances):
     return (a[0]+dx*t,a[1]+dy*t),(dx/seg,dy/seg)
 
 def fmt_grade(v):
-    if abs(v)<1e-8: return '0'
-    return f'{v:+.3f}'.rstrip('0').rstrip('.')
+    if abs(v)<1e-8: return 'L'
+    return f'{v:.3f}'.rstrip('0').rstrip('.')
 
 def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=4.):
     """Local x=forward tangent; local y=left normal. Stem from FL toward left.
@@ -71,12 +71,12 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
             'layer':f'PLAN_GRADE_{side}_TEXT','height':text_height,
             'rotation':rotation,'insert':tr(*text_xy)})
 
-def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=4.):
+def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=4., vips=None):
     plan_dxf=Path(plan_dxf).resolve();profile_dxf=Path(profile_dxf).resolve();output_dxf=Path(output_dxf).resolve()
     if output_dxf in (plan_dxf,profile_dxf): raise ValueError('Output must differ from both source DXFs')
     if not all(math.isfinite(x) for x in (station_origin,stem,arm,text_height)) or min(stem,arm,text_height)<=0:
         raise ValueError('Invalid symbol dimensions')
-    vips=[v for v in extract_profile(profile_dxf) if v.gradient_in is not None and v.gradient_out is not None]
+    vips=[v for v in (extract_profile(profile_dxf) if vips is None else vips) if v.gradient_in is not None and v.gradient_out is not None]
     doc=ezdxf.readfile(plan_dxf)
     points,distances=read_fl(doc)
     if not vips: raise ValueError('No interior VIP points found')
