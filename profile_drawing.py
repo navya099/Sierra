@@ -179,8 +179,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'BAND_TEXT', 7, 0)
     _layer(doc, 'DATUM_BREAK', 6, 18)
     _layer(doc, 'DATUM_LABEL', 7, 0)
-    _layer(doc, 'ALIGNMENT_CURVE', 1, 25)
-    _layer(doc, 'ALIGNMENT_IP_TEXT', 1, 0)
+    _layer(doc, 'ALIGNMENT_CURVE', 7, 25)
+    _layer(doc, 'ALIGNMENT_STRAIGHT', 1, 25)
+    _layer(doc, 'ALIGNMENT_IP_TEXT', 7, 0)
+    _layer(doc, 'ALIGNMENT_ELEMENT_TEXT', 7, 0)
     msp = doc.modelspace()
 
     def clipped(poly, fn, seg_start, seg_end):
