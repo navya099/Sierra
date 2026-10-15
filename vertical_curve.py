@@ -35,6 +35,18 @@ class VerticalCurve:
         grade = self.in_grade + self.algebraic_difference*x/self.length
         return z, grade
 
+    def ordinate(self, station: float) -> float:
+        """Signed ordinate relative to the nearer VIP tangent (m).
+
+        PVC..VIP: incoming tangent; VIP..PVT: outgoing tangent.
+        Zero at both endpoints, peak absolute magnitude at VIP.
+        """
+        if not self.pvc_sta - 1e-8 <= station <= self.pvt_sta + 1e-8:
+            raise ValueError('종곡선 범위를 벗어난 측점입니다.')
+        x = max(0.0, min(self.length, station - self.pvc_sta))
+        d = min(x, self.length - x)
+        return (self.out_grade - self.in_grade) / 1000.0 * d*d / (2*self.length)
+
     def extremum(self) -> tuple[float, float] | None:
         d = self.algebraic_difference
         if abs(d) < 1e-12:

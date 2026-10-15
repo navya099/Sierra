@@ -193,7 +193,11 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'GRID_MINOR', 8, 0)
     _layer(doc, 'GRID_MAJOR', 6, 18)
     _layer(doc, 'VIP_ANNOTATION', 1, 18)
+    _layer(doc, 'VERTICAL_CURVE_ORDINATE_TEXT', 1, 0)
+    _layer(doc, 'VERTICAL_CURVE_ORDINATE_LINE', 1, 18)
+    _layer(doc, 'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT', 1, 0)
     _layer(doc, 'GRADE_DISTANCE_RULE', 7, 18)
+    _layer(doc, 'VIP_DISTNACE_LINE', 7, 18)
     _layer(doc, 'VIP_MARKER', 1, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
@@ -353,11 +357,11 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         right_gap = min(actual_end_x, x+r)
         if left_gap > cursor:
             _line(msp, cursor, grade_rule_y, left_gap, grade_rule_y,
-                  'GRADE_DISTANCE_RULE')
+                  'VIP_DISTNACE_LINE')
         cursor = max(cursor, right_gap)
     if cursor < actual_end_x:
         _line(msp, cursor, grade_rule_y, actual_end_x, grade_rule_y,
-              'GRADE_DISTANCE_RULE')
+              'VIP_DISTNACE_LINE')
     _line(msp, actual_start_x, distance_rule_y, actual_end_x, distance_rule_y,
           'GRADE_DISTANCE_RULE')
     for point in vip:
@@ -373,6 +377,43 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                   'VIP_MARKER', rotation=90)
             _text(msp, 'VC', x, grade_rule_y+r+options.text_height*.6,
                   2.4, 'VIP_MARKER')
+
+    # v12.3.3: vertical-curve ordinate labels at regular station grids.
+    # Ordinate = actual parabola minus the nearest VIP tangent (signed metres).
+    # Keep all additions inside the existing annotation strip (band top .. distance rule).
+    if vc_alignment:
+        grid_step = options.station_interval
+        ordinate_y = grade_rule_y + 20.0  # fixed +20 offset above VIP_DISTNACE_LINE
+        endpoint_y = grade_rule_y + 10.0  # fixed +10 offset above VIP_DISTNACE_LINE
+        for curve in vc_alignment.curves:
+            pvc, pvt = curve.pvc_sta, curve.pvt_sta
+            if pvt < start or pvc > end:
+                continue
+            for endpoint in (pvc, pvt):
+                if start <= endpoint <= end:
+                    x = display_sta(endpoint)
+                    _line(msp, x, grade_rule_y, x, grade_rule_y + 26.0,
+                          'VERTICAL_CURVE_ORDINATE_LINE')
+                    # Distance to the adjacent grid *inside* the curve.
+                    neighbor = (math.ceil((endpoint - 1e-8) / grid_step) * grid_step
+                                if endpoint == pvc else
+                                math.floor((endpoint + 1e-8) / grid_step) * grid_step)
+                    if endpoint == pvc and neighbor < endpoint - 1e-8:
+                        neighbor += grid_step
+                    if endpoint == pvt and neighbor > endpoint + 1e-8:
+                        neighbor -= grid_step
+                    gap = abs(neighbor - endpoint)
+                    if gap > 1e-7 and gap <= grid_step + 1e-7 and start <= neighbor <= end:
+                        midpoint = (display_sta(endpoint) + display_sta(neighbor)) / 2
+                        _text(msp, f'{gap:.2f}', midpoint, endpoint_y, 2.4,
+                              'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT')
+            # All grid stations strictly inside the vertical curve.
+            for sta in _multiples(max(start, pvc), min(end, pvt), grid_step):
+                if sta <= pvc + 1e-7 or sta >= pvt - 1e-7:
+                    continue
+                ordinate = curve.ordinate(sta)
+                _text(msp, f'{ordinate:.2f}', display_sta(sta), ordinate_y,
+                      2.4, 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
 
     ar = options.annotation_row_height
     for a, b in zip(vip, vip[1:]):

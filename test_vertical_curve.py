@@ -21,6 +21,20 @@ class VerticalCurveTests(unittest.TestCase):
     def test_zero_length_is_tangent(self):
         a=VerticalAlignment([(0,100),(1000,110),(2000,100)])
         self.assertAlmostEqual(a.evaluate(1000)[0],110)
+    def test_ordinate_symmetric_and_endpoints(self):
+        c = self.a.curves[0]
+        for station, expected in ((900, 0), (950, -0.125), (1000, -0.5),
+                                  (1050, -0.125), (1100, 0)):
+            self.assertAlmostEqual(c.ordinate(station), expected)
+        with self.assertRaises(ValueError):
+            c.ordinate(899)
+
+    def test_ordinate_valley(self):
+        a = VerticalAlignment([(0,110),(1000,100),(2000,110)],{1:200})
+        c = a.curves[0]
+        self.assertAlmostEqual(c.ordinate(1000), 0.5)
+        self.assertAlmostEqual(c.ordinate(1050), 0.125)
+
     def test_invalid(self):
         with self.assertRaises(ValueError):
             VerticalAlignment([(0,100),(1000,110),(2000,100)],{1:2100})
