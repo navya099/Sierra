@@ -50,6 +50,8 @@ class DrawingOptions:
     plot_upper_y: float = 250.0
     datum_step_m: float = 10.0
     datum_safety_margin_m: float = 5.0
+    sheet_start_sta: float | None = None
+    sheet_end_sta: float | None = None
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -139,6 +141,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     end = min(ground.xs[-1], plan.xs[-1])
     if end <= start:
         raise ValueError('지반선과 계획 종단선의 공통 측점 범위가 없습니다.')
+    full_start, full_end = start, end
+    start = full_start if options.sheet_start_sta is None else options.sheet_start_sta
+    end = full_end if options.sheet_end_sta is None else options.sheet_end_sta
+    if not (math.isfinite(start) and math.isfinite(end) and full_start - 1e-7 <= start < end <= full_end + 1e-7):
+        raise ValueError('분할 측점 범위가 원본 종단 범위를 벗어났습니다.')
+    # Keep the complete alignment for calculations; clip only rendering/datum inputs.
+    def sheet_vertices(points, fn):
+        return ([(start, fn.at(start)[0])] +
+                [(x, y) for x, y in points if start < x < end] +
+                [(end, fn.at(end)[0])])
+    sheet_ground = sheet_vertices(ground_points, raw_ground)
+    sheet_plan = sheet_vertices(plan_render_points, rendered_plan)
 
     # A datum change affects profile geometry only, never the band or stationing.
     layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
@@ -154,11 +168,11 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             datum_step_m=options.datum_step_m,
             safety_margin_m=options.datum_safety_margin_m,
         )
-        datum_segments = plan_datum_segments(ground_points, plan_render_points, datum_config)
+        datum_segments = plan_datum_segments(sheet_ground, sheet_plan, datum_config)
     else:
         relevant = [start, end]
-        relevant += [x for x, _ in ground_points if start < x < end]
-        relevant += [x for x, _ in plan_render_points if start < x < end]
+        relevant += [x for x, _ in sheet_ground if start < x < end]
+        relevant += [x for x, _ in sheet_plan if start < x < end]
         lowest = min(min(ground.at(x)[0], rendered_plan.at(x)[0]) for x in relevant)
         graph_bottom = (lowest - options.bottom_margin if options.graph_bottom is None
                         else options.graph_bottom)
@@ -251,10 +265,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if len(current)>=2: parts.append(current)
         return parts
     for seg in datum_segments:
-        pv=clipped(plan_render_points,rendered_plan,seg.start_sta,seg.end_sta)
+        pv=clipped(sheet_plan,rendered_plan,seg.start_sta,seg.end_sta)
         msp.add_lwpolyline([(display_sta(x),display_el(y,seg.datum_el)) for x,y in pv],
                            dxfattribs={'layer':'PLAN_PROFILE'})
-        gv=clipped(ground_points,raw_ground,seg.start_sta,seg.end_sta)
+        gv=clipped(sheet_ground,raw_ground,seg.start_sta,seg.end_sta)
         if options.auto_datum:
             for part in clipped_ground_parts(gv,seg.datum_el):
                 msp.add_lwpolyline(part,dxfattribs={'layer':'GROUND_PROFILE'})

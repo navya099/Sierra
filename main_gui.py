@@ -532,7 +532,8 @@ class AlignmentGUI:
         frame = ttk.Frame(win, padding=18)
         frame.pack(fill='both', expand=True)
         vertical_var = tk.StringVar(value='400')
-        split_var = tk.StringVar(value='분할 안 함')
+        split_var = tk.BooleanVar(value=False)
+        split_length_var = tk.StringVar(value='700')
         datum_var = tk.BooleanVar(value=True)
         alignment_var = tk.StringVar(value=getattr(self, 'last_alignment_dxf', ''))
         profile_var = tk.BooleanVar(value=True)
@@ -541,7 +542,9 @@ class AlignmentGUI:
         entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
         entry.grid(row=0, column=1, sticky='ew', pady=8)
         ttk.Label(frame, text='종단 분할 옵션').grid(row=1, column=0, sticky='w', padx=(0, 14), pady=8)
-        ttk.Combobox(frame, textvariable=split_var, values=['분할 안 함'], state='readonly', width=15).grid(row=1, column=1, sticky='ew', pady=8)
+        ttk.Checkbutton(frame, text='독립 DXF 분할', variable=split_var).grid(row=1, column=1, sticky='w', pady=8)
+        ttk.Label(frame, text='분할 길이 (m)').grid(row=1, column=2, sticky='w', padx=(12,4))
+        ttk.Entry(frame, textvariable=split_length_var, width=9).grid(row=1, column=3, sticky='w')
         ttk.Checkbutton(frame, text='Datum 표고 자동 적용 (종단 절단)', variable=datum_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 3))
         ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 10))
         ttk.Checkbutton(frame, text='종평면도 출력 (final_result.dxf)', variable=profile_var).grid(row=4, column=0, columnspan=2, sticky='w')
@@ -573,9 +576,18 @@ class AlignmentGUI:
             if plan_var.get() and (not plan_path or not Path(plan_path).is_file()):
                 messagebox.showerror('평면선형 DXF', '최종 평면도 출력에는 유효한 평면선형 DXF가 필요합니다.', parent=win)
                 return
+            split_length = None
+            if split_var.get() and profile_var.get():
+                try:
+                    split_length = float(split_length_var.get())
+                    if not math.isfinite(split_length) or split_length <= 0:
+                        raise ValueError
+                except ValueError:
+                    messagebox.showerror('분할 길이', '0보다 큰 분할 길이(m)를 입력하세요.', parent=win)
+                    return
             self.last_alignment_dxf = plan_path
             result['value'] = (DrawingOptions(vertical_scale=v, auto_datum=datum_var.get(),
-                horizontal_alignment_dxf=plan_path or None), profile_var.get(), plan_var.get())
+                horizontal_alignment_dxf=plan_path or None), profile_var.get(), plan_var.get(), split_length)
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
@@ -598,7 +610,7 @@ class AlignmentGUI:
         choice = self._print_options()
         if choice is None:
             return
-        drawing_options, export_profile, export_plan = choice
+        drawing_options, export_profile, export_plan, split_length = choice
         source = self.dxf_path.resolve()
         plan_source = Path(drawing_options.horizontal_alignment_dxf).resolve() if drawing_options.horizontal_alignment_dxf else None
         if export_plan and plan_source == source:
@@ -610,7 +622,20 @@ class AlignmentGUI:
         folder = Path(directory).resolve()
         targets = []
         if export_profile:
-            targets.append(folder / 'final_result.dxf')
+            if split_length is None:
+                targets.append(folder / 'final_result.dxf')
+            else:
+                from profile_split import sheet_ranges
+                from profile_calculator import read_ground_points
+                ground = read_ground_points(source)
+                start = max(ground[0][0], self.last_vips[0].sta)
+                end = min(ground[-1][0], self.last_vips[-1].sta)
+                try:
+                    ranges = sheet_ranges(start, end, split_length)
+                except ValueError as exc:
+                    messagebox.showerror('분할 범위', str(exc))
+                    return
+                targets.extend(folder / f'종단면도({i}).dxf' for i in range(1, len(ranges)+1))
         if export_plan:
             targets.append(folder / 'final_plan_result.dxf')
         if any(t.resolve() == source or (plan_source and t.resolve() == plan_source) for t in targets):
@@ -644,9 +669,14 @@ class AlignmentGUI:
             successes, failures = [], []
             if export_profile:
                 try:
-                    result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
-                                                    vertical_curve_lengths=vc_lengths_by_index)
-                    successes.append(('종평면도', str(result['output']), len(vips)))
+                    if split_length is None:
+                        result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
+                                                        vertical_curve_lengths=vc_lengths_by_index)
+                        successes.append(('종평면도', str(result['output']), len(vips)))
+                    else:
+                        from profile_split import export_split_profiles
+                        results = export_split_profiles(source, folder, split_length, drawing_options, vc_lengths_by_index)
+                        successes.append((f'종평면도 {len(results)}장 분할', str(folder), len(vips)))
                 except Exception as exc:
                     failures.append(('종평면도', str(exc)))
             if export_plan:
