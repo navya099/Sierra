@@ -92,7 +92,8 @@ def _fmt_distance(metres: float) -> str:
 
 
 def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
-                           options: DrawingOptions | None = None) -> dict:
+                           options: DrawingOptions | None = None,
+                           vertical_curve_lengths: dict[int, float] | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     source = Path(source_dxf).resolve()
@@ -113,6 +114,25 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     plan_points = [(p.sta, p.elevation) for p in vip]
     raw_ground = PiecewiseLinear(ground_points)
     raw_plan = PiecewiseLinear(plan_points)
+    vc_alignment = None
+    if vertical_curve_lengths:
+        from vertical_curve import VerticalAlignment
+        vc_alignment = VerticalAlignment(plan_points, vertical_curve_lengths)
+        # Include exact PVC/PVT and extrema, with dense parabolic vertices.
+        stations = {s for s, _ in plan_points}
+        for curve in vc_alignment.curves:
+            stations.update((curve.pvc_sta, curve.pvt_sta))
+            extreme = curve.extremum()
+            if extreme:
+                stations.add(extreme[0])
+            count = max(1, math.ceil(curve.length / 2.0))
+            stations.update(curve.pvc_sta + curve.length * j / count
+                            for j in range(1, count))
+        plan_render_points = [(s, vc_alignment.evaluate(s)[0]) for s in sorted(stations)]
+        rendered_plan = PiecewiseLinear(plan_render_points)
+    else:
+        plan_render_points = plan_points
+        rendered_plan = raw_plan
     ground = raw_ground
     plan = raw_plan
     start = max(ground.xs[0], plan.xs[0])
@@ -134,12 +154,12 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             datum_step_m=options.datum_step_m,
             safety_margin_m=options.datum_safety_margin_m,
         )
-        datum_segments = plan_datum_segments(ground_points, plan_points, datum_config)
+        datum_segments = plan_datum_segments(ground_points, plan_render_points, datum_config)
     else:
         relevant = [start, end]
         relevant += [x for x, _ in ground_points if start < x < end]
-        relevant += [x for x, _ in plan_points if start < x < end]
-        lowest = min(min(ground.at(x)[0], plan.at(x)[0]) for x in relevant)
+        relevant += [x for x, _ in plan_render_points if start < x < end]
+        lowest = min(min(ground.at(x)[0], rendered_plan.at(x)[0]) for x in relevant)
         graph_bottom = (lowest - options.bottom_margin if options.graph_bottom is None
                         else options.graph_bottom)
         if graph_bottom >= lowest:
@@ -225,7 +245,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if len(current)>=2: parts.append(current)
         return parts
     for seg in datum_segments:
-        pv=clipped(plan_points,raw_plan,seg.start_sta,seg.end_sta)
+        pv=clipped(plan_render_points,rendered_plan,seg.start_sta,seg.end_sta)
         msp.add_lwpolyline([(display_sta(x),display_el(y,seg.datum_el)) for x,y in pv],
                            dxfattribs={'layer':'PLAN_PROFILE'})
         gv=clipped(ground_points,raw_ground,seg.start_sta,seg.end_sta)
@@ -292,7 +312,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     band_stations = sorted(set(_multiples(start, end, options.band_interval) + [start, end]))
     for sta in band_stations:
         g = raw_ground.at(sta)[0]
-        p = raw_plan.at(sta)[0]
+        p = vc_alignment.evaluate(sta)[0] if vc_alignment else raw_plan.at(sta)[0]
         vals = ((max(g-p, 0), 75, 90), (max(p-g, 0), 60, 75),
                 (g, 20, 40), (p, 40, 60))
         for idx, (value, low, high) in enumerate(vals):

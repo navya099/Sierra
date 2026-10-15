@@ -179,7 +179,10 @@ class AlignmentGUI:
         ttk.Button(vc_controls, text='길이 적용', command=self.apply_vc_length).pack(side='left', padx=5)
         ttk.Button(vc_controls, text='종곡선 계산', command=self.rebuild_vertical_curves).pack(side='left', padx=5)
         ttk.Button(vc_controls, text='계산 결과 CSV 저장', command=self.export_vc_csv).pack(side='left', padx=5)
-        ttk.Label(vc_frame, text='내부 VIP 선택 후 L 입력 (0은 종곡선 없음). PVC/PVT와 중심 설계고를 비교합니다. 기존 DXF 출력에는 아직 반영되지 않습니다.').pack(fill='x', padx=5)
+        self.vc_draw_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(vc_frame, text='종평면도 DXF에 종곡선 적용 (시험 · 기본 OFF)',
+                        variable=self.vc_draw_var).pack(anchor='w', padx=5)
+        ttk.Label(vc_frame, text='내부 VIP 선택 후 L 입력 (0은 종곡선 없음). 체크 시 종평면도 계획선과 계획고 밴드에 반영됩니다.').pack(fill='x', padx=5)
         self.vc_tree = self._make_tree(vc_frame, ['VIP', 'STA', '접선교점 EL', 'L(m)', 'PVC', 'PVT', '종곡선 중심 EL', '중심 차이(m)'])
         self.vc_tree.bind('<<TreeviewSelect>>', self._on_vc_select)
         self.log_text = tk.Text(log_frame, wrap='word', height=12, state='disabled', font=('Consolas', 10))
@@ -625,11 +628,24 @@ class AlignmentGUI:
         generation = self.generation
         # Snapshot the final analyzed VIP data so both outputs share the same design state.
         vips = tuple(self.last_vips)
+        apply_vc = bool(self.vc_draw_var.get()) and export_profile
+        try:
+            vc_lengths_by_index = ({i: self.vc_lengths[p.sta]
+                                    for i, p in enumerate(vips) if p.sta in self.vc_lengths
+                                    and self.vc_lengths[p.sta] > 0} if apply_vc else {})
+            if vc_lengths_by_index:
+                VerticalAlignment([(p.sta, p.elevation) for p in vips], vc_lengths_by_index)
+        except ValueError as exc:
+            self.exporting = False
+            self.export_button.configure(state='normal')
+            messagebox.showerror('종곡선 출력 설정 오류', str(exc))
+            return
         def work():
             successes, failures = [], []
             if export_profile:
                 try:
-                    result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options)
+                    result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
+                                                    vertical_curve_lengths=vc_lengths_by_index)
                     successes.append(('종평면도', str(result['output']), len(vips)))
                 except Exception as exc:
                     failures.append(('종평면도', str(exc)))
