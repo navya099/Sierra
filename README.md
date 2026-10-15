@@ -1,6 +1,3 @@
-# v12.3.7 — 종곡선 수직선 기준점 정정
+# v12.3.10 — VIP 거리 화살표 연결선
 
-- VERTICAL_CURVE_ORDINATE_LINE: 시작 Y = VIP_DISTNACE_LINE 기준선 Y, 끝 Y = 기준선 +26, 길이 26 (PVC/PVT 동일)
-- VERTICAL_CURVE_ORDINATE_TEXT: 기준선 +20 유지
-- DISTANCE_PVC_OR_PVT_TO_GRID_TEXT: 기준선 +10 유지
-- 종곡선 계산/GUI/평면도 출력 변경 없음.
+v12.3.9 승인 상태에서 `VIP_TO_GRID_DISTANCE_ARROW` 레이어에 좌우 화살촉 끝점을 잇는 수평 LINE을 추가했습니다. 기존 거리 문자, 화살촉, Y좌표, 종거 계산/배치, 기타 도면 요소는 변경하지 않았습니다.

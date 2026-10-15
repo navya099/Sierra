@@ -198,6 +198,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT', 1, 0)
     _layer(doc, 'GRADE_DISTANCE_RULE', 7, 18)
     _layer(doc, 'VIP_DISTNACE_LINE', 7, 18)
+    _layer(doc, 'VIP_TO_GRID_DISTANCE_TEXT', 1, 0)
+    _layer(doc, 'VIP_TO_GRID_DISTANCE_ARROW', 1, 18)
     _layer(doc, 'VIP_MARKER', 1, 18)
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
@@ -414,6 +416,43 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 ordinate = curve.ordinate(sta)
                 _text(msp, f'{ordinate:.2f}', display_sta(sta), ordinate_y,
                       2.4, 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
+
+    # v12.3.9: show distances from each interior VIP to adjacent station grids.
+    # Draw in the lower annotation strip, independent of ordinate annotations.
+    vip_distance_y = (distance_rule_y + layout.origin_y + layout.band_top) / 2.0
+    arrow_half_height = 0.75
+    arrow_length = 1.25
+    for vip_sta in circle_stations:
+        left_grid = math.floor((vip_sta + 1e-8) / options.station_interval) * options.station_interval
+        right_grid = math.ceil((vip_sta - 1e-8) / options.station_interval) * options.station_interval
+        for neighbor_sta in (left_grid, right_grid):
+            gap = abs(vip_sta - neighbor_sta)
+            if gap < 1e-7 or gap > options.station_interval + 1e-7:
+                continue
+            if not (start - 1e-8 <= neighbor_sta <= end + 1e-8):
+                continue
+            x_vip, x_grid = display_sta(vip_sta), display_sta(neighbor_sta)
+            left_x, right_x = sorted((x_vip, x_grid))
+            if right_x - left_x < 2 * arrow_length + 1.0:
+                # At short gaps, arrows can extend outward without overlapping.
+                arrow_len = max(0.2, (right_x-left_x)*0.25)
+            else:
+                arrow_len = arrow_length
+            _text(msp, f'{gap:.2f}', (left_x + right_x)/2.0, vip_distance_y + 2.0,
+                  2.4, 'VIP_TO_GRID_DISTANCE_TEXT')
+            # v12.3.10: horizontal dimension line joining both arrow tips.
+            # Keep the approved Y position, arrowheads and text unchanged.
+            msp.add_line((left_x, vip_distance_y), (right_x, vip_distance_y),
+                         dxfattribs={'layer': 'VIP_TO_GRID_DISTANCE_ARROW'})
+            # Filled arrowheads point outward toward the grid/VIP boundaries.
+            msp.add_solid([(left_x, vip_distance_y),
+                           (left_x + arrow_len, vip_distance_y + arrow_half_height),
+                           (left_x + arrow_len, vip_distance_y - arrow_half_height)],
+                          dxfattribs={'layer': 'VIP_TO_GRID_DISTANCE_ARROW'})
+            msp.add_solid([(right_x, vip_distance_y),
+                           (right_x - arrow_len, vip_distance_y + arrow_half_height),
+                           (right_x - arrow_len, vip_distance_y - arrow_half_height)],
+                          dxfattribs={'layer': 'VIP_TO_GRID_DISTANCE_ARROW'})
 
     ar = options.annotation_row_height
     for a, b in zip(vip, vip[1:]):
