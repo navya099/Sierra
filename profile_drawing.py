@@ -19,6 +19,7 @@ from profile_layout import ProfileLayout
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
 from bridge_girder import GirderSettings, draw_bridge_girders
+from bridge_abutment import draw_profile_abutments
 
 
 @dataclass(frozen=True)
@@ -486,11 +487,15 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
               5.0, 'VIP_ANNOTATION')
 
     girder_count = 0
+    abutment_count = 0
     if structures:
         elevation_at = (lambda s: vc_alignment.evaluate(s)[0]) if vc_alignment else (lambda s: raw_plan.at(s)[0])
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
                                            start, end, datum_segments, elevation_at,
                                            display_sta, display_el)
+        abutment_count = draw_profile_abutments(msp, structures, girder_settings or GirderSettings(),
+                                               start, end, datum_segments, elevation_at,
+                                               display_sta, display_el, factor)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
@@ -502,7 +507,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if tmp.exists():
             tmp.unlink()
     return {
-        'output': str(output), 'start': start, 'end': end, 'girder_polyline_count': girder_count,
+        'output': str(output), 'start': start, 'end': end, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
         'major_grid_count': len(major), 'band_station_count': len(band_stations),
         'alignment_station_count': len(alignment_stations) if options.include_alignment_placeholder else 0,
