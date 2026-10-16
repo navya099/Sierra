@@ -12,6 +12,7 @@ from bridge_pier import PierSettings
 from structure_label import LabelSettings
 from bridge_plan import BridgePlanSection
 from bridge_section import load_bridge_section
+from bridge_plan_pier import PlanPierSettings
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -31,6 +32,7 @@ class StructureEditor(ttk.Frame):
         self.girder_vars=[tk.StringVar(value=v) for v in ('2.0','30.0','0.0','2.0')]
         self.pier_vars=[tk.StringVar(value=v) for v in ('2.0','1.5','6.0','1.5','2.0')]
         self.bridge_color_vars=[tk.StringVar(value=v) for v in ('4','1','1')]
+        self.plan_pier_vars=[tk.StringVar(value=v) for v in ("3.0","6.0","6.0","9.0","9.0")]
         self.plan_section_path=tk.StringVar(value="")
         self._plan_section_cache=None
         self._bridge_window=None
@@ -101,8 +103,14 @@ class StructureEditor(ttk.Frame):
         ttk.Button(section_frame,text='기본 단면 복원',command=reset_section).grid(row=2,column=2,padx=3,pady=4)
         section_status=tk.StringVar(value='내장 기본 단면 사용' if not self.plan_section_path.get() else '사용자 DXF 단면 선택됨')
         ttk.Label(section_frame,textvariable=section_status).grid(row=2,column=0,columnspan=2,sticky='w',padx=3)
+        plan_pier_frame=ttk.LabelFrame(container,text="평면 교각 및 기초 (m) · v12.5.4-C",padding=7)
+        plan_pier_frame.pack(fill="x",pady=5)
+        for i,(label,var) in enumerate(zip(("기둥 지름","코핑 횡방향 폭","코핑 종방향 길이","기초 횡방향 폭","기초 종방향 길이"),self.plan_pier_vars)):
+            ttk.Label(plan_pier_frame,text=label).grid(row=i,column=0,sticky="w",padx=5,pady=2)
+            ttk.Entry(plan_pier_frame,textvariable=var,width=12).grid(row=i,column=1,padx=5,pady=2)
         def apply():
             try:
+                self.plan_pier_settings()
                 self.bridge_plan_section()
                 self.girder_settings()
                 self.pier_settings()
@@ -116,6 +124,11 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='확인',command=apply).pack(side='right',padx=4)
         ttk.Button(buttons,text='닫기',command=window.destroy).pack(side='right',padx=4)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
+
+    def plan_pier_settings(self):
+        settings=PlanPierSettings(*(float(v.get()) for v in self.plan_pier_vars))
+        settings.validate()
+        return settings
 
     def bridge_plan_section(self):
         path=self.plan_section_path.get().strip()

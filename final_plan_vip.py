@@ -11,6 +11,7 @@ import ezdxf
 from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from bridge_plan import draw_bridge_plan, BridgePlanSection
+from bridge_plan_pier import draw_plan_piers, PlanPierSettings
 
 LAYERS = ('PLAN_VIP_LINE', 'PLAN_GRADE_IN_LINE', 'PLAN_GRADE_OUT_LINE',
           'PLAN_GRADE_IN_TEXT', 'PLAN_GRADE_OUT_TEXT')
@@ -84,7 +85,7 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
         else:
             label.dxf.insert = tr(*text_xy)
 
-def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=3., vips=None, structures=(), bridge_nominal_span=30., bridge_plan_section: BridgePlanSection | None = None):
+def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=3., vips=None, structures=(), bridge_nominal_span=30., bridge_plan_section: BridgePlanSection | None = None, bridge_plan_pier_settings: PlanPierSettings | None = None):
     plan_dxf=Path(plan_dxf).resolve();profile_dxf=Path(profile_dxf).resolve();output_dxf=Path(output_dxf).resolve()
     if output_dxf in (plan_dxf,profile_dxf): raise ValueError('Output must differ from both source DXFs')
     if not all(math.isfinite(x) for x in (station_origin,stem,arm,text_height)) or min(stem,arm,text_height)<=0:
@@ -107,6 +108,9 @@ def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., s
     draw_bridge_plan(msp, structures, points=points, distances=distances,
                      position_at=position_at, station_origin=station_origin,
                      nominal_span=bridge_nominal_span, section=bridge_plan_section)
+    draw_plan_piers(msp, structures, points=points, distances=distances,
+                    position_at=position_at, station_origin=station_origin,
+                    nominal_span=bridge_nominal_span, settings=bridge_plan_pier_settings)
     output_dxf.parent.mkdir(parents=True,exist_ok=True)
     doc.saveas(output_dxf)
     return [{'sta':v.sta,'x':xy[0],'y':xy[1], 'grade_in':v.gradient_in,'grade_out':v.gradient_out} for v,xy,_ in placements]
