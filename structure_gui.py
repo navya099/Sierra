@@ -23,18 +23,13 @@ class StructureEditor(ttk.Frame):
         for i,(label,var) in enumerate(zip(('터널 최대 절토고','터널 최소 길이','교량 최대 성토고','교량 최소 길이','교량 시작 성토고'),self.settings_vars)):
             ttk.Label(settings,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
             ttk.Entry(settings,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
-        girder_box=ttk.LabelFrame(self,text='종단 거더 설정 (v12.5.2-A)',padding=7)
-        girder_box.pack(fill='x',padx=5,pady=4)
+        # Bridge settings live in a separate window; variables remain on this editor
+        # so existing output and automatic-detection methods are unchanged.
         self.girder_vars=[tk.StringVar(value=v) for v in ('2.0','30.0','0.0','2.0')]
-        for i,(label,var) in enumerate(zip(('거더 높이 girder_h (m)','기준 경간 girder_length (m)','상단 이격 girder_top_offset (m)','샘플 간격 (m)'),self.girder_vars)):
-            ttk.Label(girder_box,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
-            ttk.Entry(girder_box,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
-        pier_box=ttk.LabelFrame(self,text='교각 자동 배치 설정 (v12.5.2-C) · 단위 m',padding=7)
-        pier_box.pack(fill='x',padx=5,pady=4)
         self.pier_vars=[tk.StringVar(value=v) for v in ('2.0','1.5','6.0','1.5','2.0')]
-        for i,(label,var) in enumerate(zip(('교각 폭 (코핑부/기둥 공통)','코핑부 높이','기초 폭','기초 높이','기초 매입 깊이 (지반 아래)'),self.pier_vars)):
-            ttk.Label(pier_box,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
-            ttk.Entry(pier_box,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
+        self.bridge_color_vars=[tk.StringVar(value=v) for v in ('4','1','1')]
+        self._bridge_window=None
+        ttk.Button(self,text='교량 설정...',command=self.open_bridge_settings).pack(anchor='w',padx=8,pady=5)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
@@ -51,6 +46,54 @@ class StructureEditor(ttk.Frame):
         self.tree.bind('<Double-1>',lambda e:self.edit())
         self.status=tk.StringVar(value='구조물 후보 없음')
         ttk.Label(self,textvariable=self.status).pack(anchor='w',padx=8,pady=4)
+
+    def open_bridge_settings(self):
+        if self._bridge_window is not None and self._bridge_window.winfo_exists():
+            self._bridge_window.lift()
+            self._bridge_window.focus_set()
+            return
+        window=tk.Toplevel(self)
+        self._bridge_window=window
+        window.title('교량 설정 · v12.5.2-D')
+        window.transient(self.winfo_toplevel())
+        window.resizable(False,False)
+        container=ttk.Frame(window,padding=12)
+        container.pack(fill='both',expand=True)
+        groups=(
+            ('거더 설정', ('거더 높이 (m)','기준 경간 (m)','거더 상단 이격 (m)','샘플 간격 (m)'),self.girder_vars),
+            ('교각 설정', ('교각 폭 (m)','코핑부 높이 (m)','기초 폭 (m)','기초 높이 (m)','기초 매입 깊이 (m)'),self.pier_vars),
+            ('기타 설정 · 레이어 색상 (AutoCAD ACI 1~255)', ('거더 BRIDGE_GIRDER','교대 BRIDGE_ABUTMENT','교각 BRIDGE_PIER'),self.bridge_color_vars),
+        )
+        for heading,labels,variables in groups:
+            frame=ttk.LabelFrame(container,text=heading,padding=8)
+            frame.pack(fill='x',pady=4)
+            for i,(label,var) in enumerate(zip(labels,variables)):
+                ttk.Label(frame,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=4)
+                ttk.Entry(frame,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=4,pady=4)
+        def apply():
+            try:
+                self.girder_settings()
+                self.pier_settings()
+                self.bridge_layer_colors()
+            except (ValueError,TypeError) as exc:
+                messagebox.showerror('교량 설정',str(exc),parent=window)
+                return
+            window.destroy()
+        buttons=ttk.Frame(container)
+        buttons.pack(fill='x',pady=6)
+        ttk.Button(buttons,text='확인',command=apply).pack(side='right',padx=4)
+        ttk.Button(buttons,text='닫기',command=window.destroy).pack(side='right',padx=4)
+        window.protocol('WM_DELETE_WINDOW',window.destroy)
+
+    def bridge_layer_colors(self):
+        names=('BRIDGE_GIRDER','BRIDGE_ABUTMENT','BRIDGE_PIER')
+        colors={}
+        for name,var in zip(names,self.bridge_color_vars):
+            value=var.get().strip()
+            if not value.isdecimal() or not 1<=int(value)<=255:
+                raise ValueError(f'{name} 색상은 ACI 정수 1~255로 입력하세요.')
+            colors[name]=int(value)
+        return colors
 
     def _refresh(self):
         self.tree.delete(*self.tree.get_children())
