@@ -28,11 +28,34 @@ class StructureEngineTests(unittest.TestCase):
     def test_curve_double_crossing(self):
         a=VerticalAlignment([(0,0),(150,15),(300,0)],{1:300})
         g=[(0,0),(300,0)]
-        s=detect_structures(g,a,StructureSettings(0,0,0,0))
+        s=detect_structures(g,a,StructureSettings(0,0,0,0,0,0))
         self.assertEqual(len(s),1)
         self.assertEqual(s[0].kind,'BRIDGE')
         self.assertAlmostEqual(s[0].start_sta,0)
         self.assertAlmostEqual(s[0].end_sta,300)
+    def test_bridge_trimmed_to_five_meters(self):
+        a=VerticalAlignment([(0,30),(300,30)])
+        g=[(0,30),(150,0),(300,30)]
+        found=detect_structures(g,a)
+        self.assertEqual(len(found),1)
+        self.assertAlmostEqual(found[0].start_sta,25,places=4)
+        self.assertAlmostEqual(found[0].end_sta,275,places=4)
+        self.assertEqual(found[0].name,'B1')
+
+    def test_bridge_depth_overrides_boundary(self):
+        a=VerticalAlignment([(0,30),(300,30)])
+        g=[(0,30),(150,0),(300,30)]
+        cfg=StructureSettings(girder_clearance_depth=10)
+        found=detect_structures(g,a,cfg)
+        self.assertAlmostEqual(found[0].start_sta,50,places=4)
+        self.assertAlmostEqual(found[0].end_sta,250,places=4)
+
+    def test_manual_structure_not_trimmed(self):
+        from structure_engine import StructureSegment
+        segment=StructureSegment('BRIDGE',0,300,30,150,'MANUAL','Custom')
+        self.assertEqual(segment.start_sta,0)
+        self.assertEqual(segment.name,'Custom')
+
     def test_manual_csv(self):
         from structure_engine import StructureSegment
         with TemporaryDirectory() as d:

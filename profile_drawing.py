@@ -18,6 +18,7 @@ from profile_calculator import PiecewiseLinear, read_ground_points, calculate_st
 from profile_layout import ProfileLayout
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
+from bridge_girder import GirderSettings, draw_bridge_girders
 
 
 @dataclass(frozen=True)
@@ -95,7 +96,8 @@ def _fmt_distance(metres: float) -> str:
 
 def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            options: DrawingOptions | None = None,
-                           vertical_curve_lengths: dict[int, float] | None = None) -> dict:
+                           vertical_curve_lengths: dict[int, float] | None = None,
+                           structures=None, girder_settings: GirderSettings | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     source = Path(source_dxf).resolve()
@@ -218,6 +220,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'PROFILE_BAND', 7, 18)
     _layer(doc, 'BAND_TEXT', 7, 0)
     _layer(doc, 'DATUM_BREAK', 6, 18)
+    _layer(doc, 'BRIDGE_GIRDER', 4, 25)
     _layer(doc, 'DATUM_LABEL', 7, 0)
     _layer(doc, 'ALIGNMENT_CURVE', 7, 25)
     _layer(doc, 'ALIGNMENT_STRAIGHT', 1, 25)
@@ -482,6 +485,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
               midpoint, distance_rule_y + ar*.45,
               5.0, 'VIP_ANNOTATION')
 
+    girder_count = 0
+    if structures:
+        elevation_at = (lambda s: vc_alignment.evaluate(s)[0]) if vc_alignment else (lambda s: raw_plan.at(s)[0])
+        girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
+                                           start, end, datum_segments, elevation_at,
+                                           display_sta, display_el)
+
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
     tmp = output.with_name(output.stem + '.tmp.dxf')
@@ -492,7 +502,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if tmp.exists():
             tmp.unlink()
     return {
-        'output': str(output), 'start': start, 'end': end,
+        'output': str(output), 'start': start, 'end': end, 'girder_polyline_count': girder_count,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
         'major_grid_count': len(major), 'band_station_count': len(band_stations),
         'alignment_station_count': len(alignment_stations) if options.include_alignment_placeholder else 0,

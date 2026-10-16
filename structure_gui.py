@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox, filedialog
 from structure_engine import (StructureSettings, StructureSegment, detect_structures,
                               export_csv, load_manual_csv)
 from profile_calculator import read_ground_points
+from bridge_girder import GirderSettings
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -15,12 +16,18 @@ class StructureEditor(ttk.Frame):
         self.log = log
         self.segments = []
         self.dirty = False
-        self.settings_vars = [tk.StringVar(value=x) for x in ('40','100','15','100')]
+        self.settings_vars = [tk.StringVar(value=x) for x in ('40','100','15','100','5')]
         settings = ttk.LabelFrame(self, text='자동 판정 기준 (m)', padding=7)
         settings.pack(fill='x', padx=5, pady=4)
-        for i,(label,var) in enumerate(zip(('터널 최대 절토고','터널 최소 길이','교량 최대 성토고','교량 최소 길이'),self.settings_vars)):
+        for i,(label,var) in enumerate(zip(('터널 최대 절토고','터널 최소 길이','교량 최대 성토고','교량 최소 길이','교량 시작 성토고'),self.settings_vars)):
             ttk.Label(settings,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
             ttk.Entry(settings,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
+        girder_box=ttk.LabelFrame(self,text='종단 거더 설정 (v12.5.2-A)',padding=7)
+        girder_box.pack(fill='x',padx=5,pady=4)
+        self.girder_vars=[tk.StringVar(value=v) for v in ('2.0','30.0','0.0','2.0')]
+        for i,(label,var) in enumerate(zip(('거더 높이 girder_h (m)','기준 경간 girder_length (m)','상단 이격 girder_top_offset (m)','샘플 간격 (m)'),self.girder_vars)):
+            ttk.Label(girder_box,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
+            ttk.Entry(girder_box,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
@@ -45,7 +52,13 @@ class StructureEditor(ttk.Frame):
         self.status.set(f'{len(self.segments)}개 구조물 · 터널 {sum(s.kind=="TUNNEL" for s in self.segments)}개 · 교량 {sum(s.kind=="BRIDGE" for s in self.segments)}개'+(' · 미저장' if self.dirty else ''))
 
     def _settings(self):
-        return StructureSettings(*(float(v.get()) for v in self.settings_vars))
+        return StructureSettings(*(float(v.get()) for v in self.settings_vars),
+                                 float(self.girder_vars[0].get()) + float(self.girder_vars[2].get()))
+
+    def girder_settings(self):
+        settings = GirderSettings(*(float(v.get()) for v in self.girder_vars))
+        settings.validate()
+        return settings
 
     def auto_generate(self):
         try:

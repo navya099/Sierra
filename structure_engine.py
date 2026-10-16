@@ -22,6 +22,8 @@ class StructureSettings:
     tunnel_min_length: float = 100.0
     bridge_fill_threshold: float = 15.0
     bridge_min_length: float = 100.0
+    bridge_start_fill_h: float = 5.0
+    girder_clearance_depth: float = 0.0  # top offset + girder height
 
     def __post_init__(self):
         if any(not math.isfinite(v) or v < 0 for v in asdict(self).values()):
@@ -121,6 +123,7 @@ def detect_structures(ground_points, alignment: VerticalAlignment,
     if active:
         spans.append(active)
     results=[]
+    counters={'TUNNEL': 0, 'BRIDGE': 0}
     for kind,a,b in spans:
         length=b-a
         min_length=settings.tunnel_min_length if kind=='TUNNEL' else settings.bridge_min_length
@@ -131,7 +134,39 @@ def detect_structures(ground_points, alignment: VerticalAlignment,
         peak=max(candidates,key=lambda x: abs(diff(x)))
         height=abs(diff(peak))
         if height+1e-7 >= threshold:
-            results.append(StructureSegment(kind,a,b,height,peak))
+            if kind == 'BRIDGE':
+                # Qualify using the original fill span, then trim to the region
+                # where the full girder depth fits above the ground surface.
+                boundary=max(settings.bridge_start_fill_h,settings.girder_clearance_depth)
+                if boundary > 0:
+                    intervals=[]
+                    parts=[a]+[x for x in fine if a < x < b]+[b]
+                    crossings=[]
+                    for x,y in zip(parts,parts[1:]):
+                        fx,fy=diff(x)-boundary,diff(y)-boundary
+                        if fx*fy < 0:
+                            r=_roots(lambda sta: diff(sta)-boundary,x,y)
+                            if r is not None: crossings.append(r)
+                    boundaries=sorted(set(parts+crossings))
+                    active_start=None
+                    for x,y in zip(boundaries,boundaries[1:]):
+                        if y-x < 1e-7: continue
+                        above=diff((x+y)/2) >= boundary-1e-8
+                        if above and active_start is None: active_start=x
+                        if not above and active_start is not None:
+                            intervals.append((active_start,x)); active_start=None
+                    if active_start is not None: intervals.append((active_start,b))
+                    # Independent eligible regions; never bridge across a low-fill gap.
+                    for start,end in intervals:
+                        if end-start+1e-7 < min_length: continue
+                        local=[start,end]+[x for x in fine if start < x < end]
+                        local_peak=max(local,key=diff)
+                        counters[kind]+=1
+                        results.append(StructureSegment(kind,start,end,diff(local_peak),local_peak,'AUTO',f'B{counters[kind]}'))
+                    continue
+            counters[kind] += 1
+            prefix = 'T' if kind == 'TUNNEL' else 'B'
+            results.append(StructureSegment(kind,a,b,height,peak,'AUTO',f'{prefix}{counters[kind]}'))
     return results
 
 
@@ -176,10 +211,12 @@ def main():
     ap.add_argument('--tunnel-min',type=float,default=100)
     ap.add_argument('--bridge-fill',type=float,default=15)
     ap.add_argument('--bridge-min',type=float,default=100)
+    ap.add_argument('--bridge-start-fill',type=float,default=5)
+    ap.add_argument('--girder-depth',type=float,default=0,help='girder_top_offset + girder_h')
     ap.add_argument('--curves-json',help='VIP 인덱스(0부터 시작): 종곡선 길이 사전 JSON')
     args=ap.parse_args()
     lengths={int(k):float(v) for k,v in json.loads(Path(args.curves_json).read_text(encoding='utf-8')).items()} if args.curves_json else {}
-    settings=StructureSettings(args.tunnel_cut,args.tunnel_min,args.bridge_fill,args.bridge_min)
+    settings=StructureSettings(args.tunnel_cut,args.tunnel_min,args.bridge_fill,args.bridge_min,args.bridge_start_fill,args.girder_depth)
     segments=auto_from_dxf(args.dxf,lengths,settings)
     export_csv(segments,args.output_csv)
     print(f'구조물 후보 {len(segments)}개 저장: {args.output_csv}')
