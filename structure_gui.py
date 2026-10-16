@@ -32,6 +32,7 @@ class StructureEditor(ttk.Frame):
         self._bridge_window=None
         self._label_window=None
         self.label_vars=[tk.StringVar(value=v) for v in ('STA.','3.0','1','3.0','PSC')]
+        self.label_custom_prefix=tk.StringVar(value='서기(현)')
         buttons_settings=ttk.Frame(self); buttons_settings.pack(anchor='w',padx=8,pady=5)
         ttk.Button(buttons_settings,text='교량 설정...',command=self.open_bridge_settings).pack(side='left',padx=3)
         ttk.Button(buttons_settings,text='구조물 주석 설정...',command=self.open_label_settings).pack(side='left',padx=3)
@@ -92,7 +93,8 @@ class StructureEditor(ttk.Frame):
 
     def label_settings(self):
         prefix,height,color,margin,bridge_type=(v.get().strip() for v in self.label_vars)
-        settings=LabelSettings(prefix,float(height),int(color),float(margin),bridge_type)
+        actual_prefix = 'STA.' if prefix == 'STA.' else self.label_custom_prefix.get().strip()
+        settings=LabelSettings(actual_prefix,float(height),int(color),float(margin),bridge_type)
         settings.validate()
         return settings
 
@@ -107,16 +109,24 @@ class StructureEditor(ttk.Frame):
         for i,(label,var) in enumerate(zip(labels,self.label_vars)):
             ttk.Label(frame,text=label).grid(row=i,column=0,sticky='w',padx=5,pady=6)
             if i==0:
-                ttk.Combobox(frame,textvariable=var,values=('STA.','서기(현)'),state='readonly',width=18).grid(row=i,column=1,padx=5,pady=6)
+                ttk.Combobox(frame,textvariable=var,values=('STA.','사용자 지정'),state='readonly',width=18).grid(row=i,column=1,padx=5,pady=6)
             else:
                 ttk.Entry(frame,textvariable=var,width=21).grid(row=i,column=1,padx=5,pady=6)
-        ttk.Label(frame,text='수직선 30 · 사선 30° · 문자 회전 30° 고정').grid(row=len(labels),column=0,columnspan=2,pady=7)
+        ttk.Label(frame,text='사용자 지정 접두어').grid(row=5,column=0,sticky='w',padx=5,pady=6)
+        prefix_entry=ttk.Entry(frame,textvariable=self.label_custom_prefix,width=21)
+        prefix_entry.grid(row=5,column=1,padx=5,pady=6)
+        def sync_prefix(*_):
+            prefix_entry.configure(state='normal' if self.label_vars[0].get() != 'STA.' else 'disabled')
+        self.label_vars[0].trace_add('write',sync_prefix)
+        sync_prefix()
+        ttk.Label(frame,text='예: 서기(현), 서기(환), 수기(환), 량기(현)').grid(row=6,column=0,columnspan=2,pady=3)
+        ttk.Label(frame,text='수직선 30 · 사선 30° · 문자 회전 30° 고정').grid(row=7,column=0,columnspan=2,pady=7)
         def apply():
             try:self.label_settings()
             except (ValueError,TypeError) as exc:
                 messagebox.showerror('주석 설정',str(exc),parent=win);return
             win.destroy()
-        ttk.Button(frame,text='확인',command=apply).grid(row=6,column=1,sticky='e',pady=7)
+        ttk.Button(frame,text='확인',command=apply).grid(row=8,column=1,sticky='e',pady=7)
         win.protocol('WM_DELETE_WINDOW',win.destroy)
 
     def bridge_layer_colors(self):

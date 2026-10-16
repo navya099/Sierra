@@ -6,14 +6,14 @@ from ezdxf.enums import TextEntityAlignment
 
 @dataclass(frozen=True)
 class LabelSettings:
-    station_prefix: str = 'STA.'  # or '서기(현)'
+    station_prefix: str = 'STA.'  # user-defined railway stationing prefix
     text_height: float = 3.0
     color: int = 1
     line_margin: float = 3.0
     bridge_type: str = 'PSC'
     def validate(self):
-        if self.station_prefix not in ('STA.', '서기(현)'):
-            raise ValueError('측점 표기 형식은 STA. 또는 서기(현)이어야 합니다.')
+        if not self.station_prefix.strip() or any(ch in self.station_prefix for ch in '\r\n\t') or len(self.station_prefix) > 30:
+            raise ValueError('측점 접두어는 1~30자이며 줄바꿈이나 탭을 포함할 수 없습니다.')
         if not all(math.isfinite(v) and v > 0 for v in (self.text_height, self.line_margin)):
             raise ValueError('문자 높이와 사선 여유는 양수여야 합니다.')
         if type(self.color) is not int or not 1 <= self.color <= 255:
