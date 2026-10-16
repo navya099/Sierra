@@ -23,6 +23,7 @@ from profile_scale import ProfileScale
 from profile_drawing import DrawingOptions, create_profile_drawing
 from final_plan_vip import create_final_plan
 from vertical_curve import VerticalAlignment
+from structure_gui import StructureEditor
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -169,6 +170,10 @@ class AlignmentGUI:
         tabs.add(station_frame, text='증분측점 계산')
         tabs.add(log_frame, text='실행 로그')
         tabs.add(vc_frame, text='종곡선 설계 (시험)')
+        structure_frame = ttk.Frame(tabs)
+        tabs.add(structure_frame, text='구조물 관리')
+        self.structure_editor = StructureEditor(structure_frame, self._structure_context, self._log)
+        self.structure_editor.pack(fill='both', expand=True)
         self.vip_tree = self._make_tree(vip_frame, ['구분', 'STA', 'EL', '진입(‰)', '진출(‰)', '변화(‰)'])
         self.station_tree = self._make_tree(station_frame, ['STA', '지반고', '계획고', '표고차', '구배(‰)', '구분'])
         vc_controls = ttk.Frame(vc_frame)
@@ -270,6 +275,7 @@ class AlignmentGUI:
         self.stop_watch()
         self.dxf_path = path
         self.vc_lengths.clear()
+        self.structure_editor.clear_for_new_project()
         self.file_var.set(str(path))
         self._clear_results()
         self.status_var.set('DXF 감시 준비')
@@ -443,6 +449,12 @@ class AlignmentGUI:
         self.vc_lengths = lengths
         self._refresh_vc_table(select_index=index)
         self._log(f'종곡선 길이 적용: VIP {index}, STA {sta:.3f}, L={length:g}m')
+
+    def _structure_context(self):
+        # Always rebuild from live VIP curve lengths, not a stale cached alignment.
+        if not self.dxf_path or not self.last_vips:
+            return self.dxf_path, None
+        return self.dxf_path, self._make_vc_alignment(self.vc_lengths)
 
     def _make_vc_alignment(self, lengths):
         points = [(p.sta, p.elevation) for p in self.last_vips]
