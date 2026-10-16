@@ -10,6 +10,8 @@ from profile_calculator import read_ground_points
 from bridge_girder import GirderSettings
 from bridge_pier import PierSettings
 from structure_label import LabelSettings
+from bridge_plan import BridgePlanSection
+from bridge_section import load_bridge_section
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -29,6 +31,8 @@ class StructureEditor(ttk.Frame):
         self.girder_vars=[tk.StringVar(value=v) for v in ('2.0','30.0','0.0','2.0')]
         self.pier_vars=[tk.StringVar(value=v) for v in ('2.0','1.5','6.0','1.5','2.0')]
         self.bridge_color_vars=[tk.StringVar(value=v) for v in ('4','1','1')]
+        self.plan_section_path=tk.StringVar(value="")
+        self._plan_section_cache=None
         self._bridge_window=None
         self._label_window=None
         self.label_vars=[tk.StringVar(value=v) for v in ('STA.','3.0','1','3.0','PSC')]
@@ -76,8 +80,30 @@ class StructureEditor(ttk.Frame):
             for i,(label,var) in enumerate(zip(labels,variables)):
                 ttk.Label(frame,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=4)
                 ttk.Entry(frame,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=4,pady=4)
+        section_frame=ttk.LabelFrame(container,text='평면 교량 단면 · v12.5.4-B',padding=8)
+        section_frame.pack(fill='x',pady=4)
+        ttk.Label(section_frame,text='미지정 시 내장 기본 단면 사용').grid(row=0,column=0,columnspan=3,sticky='w',pady=3)
+        ttk.Entry(section_frame,textvariable=self.plan_section_path,width=48,state='readonly').grid(row=1,column=0,columnspan=2,sticky='ew',padx=3)
+        def browse_section():
+            path=filedialog.askopenfilename(parent=window,title='교량 표준 횡단면 DXF',filetypes=[('DXF 파일','*.dxf')])
+            if not path:return
+            try:
+                section=load_bridge_section(path)
+            except Exception as exc:
+                messagebox.showerror('교량 단면 DXF 검증 실패',str(exc),parent=window);return
+            self.plan_section_path.set(path)
+            self._plan_section_cache=(path,section)
+            section_status.set(f'슬래브 {section.slab_right-section.slab_left:.3f}m · 거더 {len(section.girders)}열')
+        def reset_section():
+            self.plan_section_path.set('');self._plan_section_cache=None
+            section_status.set('내장 기본 단면 사용')
+        ttk.Button(section_frame,text='DXF 불러오기...',command=browse_section).grid(row=1,column=2,padx=3)
+        ttk.Button(section_frame,text='기본 단면 복원',command=reset_section).grid(row=2,column=2,padx=3,pady=4)
+        section_status=tk.StringVar(value='내장 기본 단면 사용' if not self.plan_section_path.get() else '사용자 DXF 단면 선택됨')
+        ttk.Label(section_frame,textvariable=section_status).grid(row=2,column=0,columnspan=2,sticky='w',padx=3)
         def apply():
             try:
+                self.bridge_plan_section()
                 self.girder_settings()
                 self.pier_settings()
                 self.bridge_layer_colors()
@@ -90,6 +116,13 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='확인',command=apply).pack(side='right',padx=4)
         ttk.Button(buttons,text='닫기',command=window.destroy).pack(side='right',padx=4)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
+
+    def bridge_plan_section(self):
+        path=self.plan_section_path.get().strip()
+        if not path:
+            return BridgePlanSection()
+        # Revalidate from disk on every export; never use stale geometry after CAD edits.
+        return load_bridge_section(path)
 
     def label_settings(self):
         prefix,height,color,margin,bridge_type=(v.get().strip() for v in self.label_vars)
