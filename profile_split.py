@@ -22,7 +22,7 @@ def sheet_ranges(start: float, end: float, length: float) -> list[tuple[float, f
             result.append((a,b))
     return result
 
-def export_split_profiles(source_dxf, output_folder, length, options=None, vertical_curve_lengths=None, structures=None, girder_settings=None):
+def export_split_profiles(source_dxf, output_folder, length, options=None, vertical_curve_lengths=None, structures=None, girder_settings=None, pier_settings=None):
     source = Path(source_dxf).resolve()
     ground = read_ground_points(source)
     vip = extract_profile(source)
@@ -36,5 +36,5 @@ def export_split_profiles(source_dxf, output_folder, length, options=None, verti
     for i, (a,b) in enumerate(ranges, 1):
         output = folder / f'종단면도({i}).dxf'
         local = replace(opts, sheet_start_sta=a, sheet_end_sta=b)
-        results.append(create_profile_drawing(source, output, local, vertical_curve_lengths, structures, girder_settings))
+        results.append(create_profile_drawing(source, output, local, vertical_curve_lengths, structures, girder_settings, pier_settings))
     return results

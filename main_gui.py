@@ -679,6 +679,7 @@ class AlignmentGUI:
             return
         try:
             girder_settings = self.structure_editor.girder_settings() if export_profile else None
+            pier_settings = self.structure_editor.pier_settings() if export_profile else None
             structures = tuple(self.structure_editor.segments) if export_profile else ()
         except (ValueError, TypeError) as exc:
             self.exporting = False
@@ -692,12 +693,12 @@ class AlignmentGUI:
                     if split_length is None:
                         result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
                                                         vertical_curve_lengths=vc_lengths_by_index,
-                                                        structures=structures, girder_settings=girder_settings)
+                                                        structures=structures, girder_settings=girder_settings, pier_settings=pier_settings)
                         successes.append(('종평면도', str(result['output']), len(vips)))
                     else:
                         from profile_split import export_split_profiles
                         results = export_split_profiles(source, folder, split_length, drawing_options, vc_lengths_by_index,
-                                                        structures, girder_settings)
+                                                        structures, girder_settings, pier_settings)
                         successes.append((f'종평면도 {len(results)}장 분할', str(folder), len(vips)))
                 except Exception as exc:
                     failures.append(('종평면도', str(exc)))

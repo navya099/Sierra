@@ -8,6 +8,7 @@ from structure_engine import (StructureSettings, StructureSegment, detect_struct
                               export_csv, load_manual_csv)
 from profile_calculator import read_ground_points
 from bridge_girder import GirderSettings
+from bridge_pier import PierSettings
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -28,6 +29,12 @@ class StructureEditor(ttk.Frame):
         for i,(label,var) in enumerate(zip(('거더 높이 girder_h (m)','기준 경간 girder_length (m)','상단 이격 girder_top_offset (m)','샘플 간격 (m)'),self.girder_vars)):
             ttk.Label(girder_box,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
             ttk.Entry(girder_box,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
+        pier_box=ttk.LabelFrame(self,text='교각 자동 배치 설정 (v12.5.2-C) · 단위 m',padding=7)
+        pier_box.pack(fill='x',padx=5,pady=4)
+        self.pier_vars=[tk.StringVar(value=v) for v in ('2.0','1.5','6.0','1.5','2.0')]
+        for i,(label,var) in enumerate(zip(('교각 폭 (코핑부/기둥 공통)','코핑부 높이','기초 폭','기초 높이','기초 매입 깊이 (지반 아래)'),self.pier_vars)):
+            ttk.Label(pier_box,text=label).grid(row=i//2,column=(i%2)*2,sticky='w',padx=4,pady=3)
+            ttk.Entry(pier_box,textvariable=var,width=12).grid(row=i//2,column=(i%2)*2+1,padx=5,pady=3)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
@@ -57,6 +64,11 @@ class StructureEditor(ttk.Frame):
 
     def girder_settings(self):
         settings = GirderSettings(*(float(v.get()) for v in self.girder_vars))
+        settings.validate()
+        return settings
+
+    def pier_settings(self):
+        settings=PierSettings(*(float(v.get()) for v in self.pier_vars))
         settings.validate()
         return settings
 
