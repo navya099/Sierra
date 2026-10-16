@@ -9,6 +9,7 @@ from structure_engine import (StructureSettings, StructureSegment, detect_struct
 from profile_calculator import read_ground_points
 from bridge_girder import GirderSettings
 from bridge_pier import PierSettings
+from structure_label import LabelSettings
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -29,7 +30,11 @@ class StructureEditor(ttk.Frame):
         self.pier_vars=[tk.StringVar(value=v) for v in ('2.0','1.5','6.0','1.5','2.0')]
         self.bridge_color_vars=[tk.StringVar(value=v) for v in ('4','1','1')]
         self._bridge_window=None
-        ttk.Button(self,text='교량 설정...',command=self.open_bridge_settings).pack(anchor='w',padx=8,pady=5)
+        self._label_window=None
+        self.label_vars=[tk.StringVar(value=v) for v in ('STA.','3.0','1','3.0','PSC')]
+        buttons_settings=ttk.Frame(self); buttons_settings.pack(anchor='w',padx=8,pady=5)
+        ttk.Button(buttons_settings,text='교량 설정...',command=self.open_bridge_settings).pack(side='left',padx=3)
+        ttk.Button(buttons_settings,text='구조물 주석 설정...',command=self.open_label_settings).pack(side='left',padx=3)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
@@ -84,6 +89,35 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='확인',command=apply).pack(side='right',padx=4)
         ttk.Button(buttons,text='닫기',command=window.destroy).pack(side='right',padx=4)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
+
+    def label_settings(self):
+        prefix,height,color,margin,bridge_type=(v.get().strip() for v in self.label_vars)
+        settings=LabelSettings(prefix,float(height),int(color),float(margin),bridge_type)
+        settings.validate()
+        return settings
+
+    def open_label_settings(self):
+        if self._label_window is not None and self._label_window.winfo_exists():
+            self._label_window.lift(); self._label_window.focus_set(); return
+        win=tk.Toplevel(self); self._label_window=win
+        win.title('구조물 공통 위치 라벨 설정 · v12.5.3')
+        win.transient(self.winfo_toplevel()); win.resizable(False,False)
+        frame=ttk.Frame(win,padding=14);frame.pack(fill='both',expand=True)
+        labels=('측점 표기 방식','문자 높이','레이어 색상 (ACI)','사선 끝 여유','교량 형식')
+        for i,(label,var) in enumerate(zip(labels,self.label_vars)):
+            ttk.Label(frame,text=label).grid(row=i,column=0,sticky='w',padx=5,pady=6)
+            if i==0:
+                ttk.Combobox(frame,textvariable=var,values=('STA.','서기(현)'),state='readonly',width=18).grid(row=i,column=1,padx=5,pady=6)
+            else:
+                ttk.Entry(frame,textvariable=var,width=21).grid(row=i,column=1,padx=5,pady=6)
+        ttk.Label(frame,text='수직선 30 · 사선 30° · 문자 회전 30° 고정').grid(row=len(labels),column=0,columnspan=2,pady=7)
+        def apply():
+            try:self.label_settings()
+            except (ValueError,TypeError) as exc:
+                messagebox.showerror('주석 설정',str(exc),parent=win);return
+            win.destroy()
+        ttk.Button(frame,text='확인',command=apply).grid(row=6,column=1,sticky='e',pady=7)
+        win.protocol('WM_DELETE_WINDOW',win.destroy)
 
     def bridge_layer_colors(self):
         names=('BRIDGE_GIRDER','BRIDGE_ABUTMENT','BRIDGE_PIER')
