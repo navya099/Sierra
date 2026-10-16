@@ -680,9 +680,10 @@ class AlignmentGUI:
         try:
             girder_settings = self.structure_editor.girder_settings() if export_profile else None
             pier_settings = self.structure_editor.pier_settings() if export_profile else None
-            structures = tuple(self.structure_editor.segments) if export_profile else ()
+            structures = tuple(self.structure_editor.segments) if (export_profile or export_plan) else ()
             bridge_layer_colors = self.structure_editor.bridge_layer_colors() if export_profile else None
             label_settings = self.structure_editor.label_settings() if export_profile else None
+            plan_bridge_span = self.structure_editor.girder_settings().girder_length if export_plan else 30.0
         except (ValueError, TypeError) as exc:
             self.exporting = False
             self.export_button.configure(state='normal')
@@ -706,7 +707,9 @@ class AlignmentGUI:
                     failures.append(('종평면도', str(exc)))
             if export_plan:
                 try:
-                    placed = create_final_plan(plan_source, source, folder / 'final_plan_result.dxf', vips=vips)
+                    placed = create_final_plan(plan_source, source, folder / 'final_plan_result.dxf',
+                                               vips=vips, structures=structures,
+                                               bridge_nominal_span=plan_bridge_span)
                     successes.append(('최종 평면도', str(folder / 'final_plan_result.dxf'), len(placed)))
                 except Exception as exc:
                     failures.append(('최종 평면도', str(exc)))
