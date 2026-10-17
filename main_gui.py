@@ -10,6 +10,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import ezdxf
 
+from dxf_reader import _slope
 from dxf_watcher import DXFWatcher
 from profile_scale import ProfileScale
 from profile_drawing import DrawingOptions, create_profile_drawing
@@ -201,6 +203,8 @@ class AlignmentGUI:
         self.export_button = ttk.Button(footer, text='도면 출력 (DXF)', command=self.export_drawing, state='disabled')
         self.export_button.pack(side='left', padx=(0, 8))
         ttk.Button(footer, text='결과 CSV 열기', command=self.open_folder).pack(side='left')
+        # AlignmentGUI._build 내의 footer 영역 또는 버튼 영역에 추가
+        ttk.Button(footer, text='대화형 그래프 편집 (PyQt)', command=self.open_pyqt_graph_editor).pack(side='left', padx=5)
         ttk.Button(footer, text='종료', command=self.close).pack(side='right')
         ttk.Button(footer, text='매뉴얼', command=self.show_manual).pack(side='right', padx=8)
         self._log('GUI 준비 완료. TXT 또는 DXF를 불러오세요.')
@@ -380,6 +384,8 @@ class AlignmentGUI:
                 elif kind == 'error':
                     self.status_var.set('분석 대기 / 오류')
                     self._log(f'분석 대기/오류: {data}')
+                elif kind == 'update_vips_from_qt':
+                    self.sync_vip_from_external_data(data)
         except queue.Empty:
             pass
         self.root.after(100, self._drain_events)
@@ -763,7 +769,95 @@ class AlignmentGUI:
         self.stop_watch()
         self.root.destroy()
 
+    # AlignmentGUI 클래스 내부에 추가할 메서드
+    def open_pyqt_graph_editor(self):
+        if not self.last_vips:
+            messagebox.showinfo('파일 필요', '먼저 DXF를 불러와 VIP 분석을 완료하세요.')
+            return
 
+        # 지반고 추출
+        ground_profile = []
+        if self.dxf_path and self.dxf_path.exists():
+            try:
+                from profile_calculator import read_ground_points
+                ground_profile = read_ground_points(self.dxf_path)
+            except Exception:
+                pass
+
+        vip_coords = [(p.sta, p.elevation) for p in self.last_vips]
+
+        # 임시 파일 생성 (데이터 교환용)
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', encoding='utf-8') as f_in:
+            import json
+            json.dump({"ground": ground_profile, "vips": vip_coords}, f_in)
+            temp_in_path = f_in.name
+
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', encoding='utf-8') as f_out:
+            json.dump(vip_coords, f_out)
+            temp_out_path = f_out.name
+
+        # 서브프로세스로 PyQt 앱 실행 (메인 프로세스와 완벽 분리되어 충돌 방지)
+        python_executable = sys.executable
+        # [수정] 폴더 경로를 결합할 때는 with_name 대신 / 연산자를 사용합니다.
+        # 만약 render_engine 폴더 안에 있다면 아래와 같이 작성:
+        script_path = Path(__file__).parent / 'render_engine' / 'interactive_plot_app.py'
+
+        # 만약 render_engine 폴더가 아니라 메인 스크립트와 같은 위치(F:\DOCUMENT\GitHub\Sierra\)에 있다면 아래처럼 작성:
+        # script_path = Path(__file__).with_name('interactive_plot_app.py')
+
+        def monitor_process(proc):
+            proc.wait()
+            # PyQt 창이 닫힌 후 결과 읽기
+            try:
+                with open(temp_out_path, 'r', encoding='utf-8') as f:
+                    new_coords = json.load(f)
+                # 메인 스레드 큐를 통해 반영
+                self.events.put((self.generation, 'update_vips_from_qt', new_coords))
+            except Exception:
+                pass
+            # 임시 파일 정리
+            try:
+                Path(temp_in_path).unlink(missing_ok=True)
+                Path(temp_out_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        proc = subprocess.Popen([python_executable, str(script_path), temp_in_path, temp_out_path])
+        threading.Thread(target=monitor_process, args=(proc,), daemon=True).start()
+        self._log('인터랙티브 그래프 창을 별도 프로세스로 실행했습니다.')
+
+    def sync_vip_from_external_data(self, new_coords):
+        from dxf_reader import ProfilePoint
+
+        updated_vips = []
+        n = len(new_coords)
+        for i, (sta, el) in enumerate(new_coords):
+            kind = "BP" if i == 0 else "EP" if i == n - 1 else f"VIP{i}"
+            grad_in = _slope(new_coords[i - 1], (sta, el)) if i > 0 else None
+            grad_out = _slope((sta, el), new_coords[i + 1]) if i < n - 1 else None
+            delta_grad = (grad_out - grad_in) if (grad_in is not None and grad_out is not None) else None
+
+            updated_vips.append(ProfilePoint(
+                sta=sta, elevation=el, kind=kind,
+                gradient_in=grad_in, gradient_out=grad_out, delta_gradient=delta_grad
+            ))
+
+        self.last_vips = updated_vips
+        self.vip_tree.delete(*self.vip_tree.get_children())
+
+        def fmt(v):
+            return '—' if v is None else f'{v:+.3f}'
+
+        for p in self.last_vips:
+            self.vip_tree.insert('', 'end', values=(
+            p.kind, f'{p.sta:.3f}', f'{p.elevation:.3f}', fmt(p.gradient_in), fmt(p.gradient_out),
+            fmt(p.delta_gradient)))
+
+        self.vip_count_var.set(f'{max(0, len(self.last_vips) - 2)}개')
+        grades = [abs(p.gradient_out) for p in self.last_vips if p.gradient_out is not None]
+        self.max_grade_var.set(f'{max(grades):.3f}‰' if grades else '—')
+        self._refresh_vc_table()
+        self._log('그래프 편집 내용이 메인 UI에 동기화되었습니다.')
 def main():
     root = RootClass()
     AlignmentGUI(root)
