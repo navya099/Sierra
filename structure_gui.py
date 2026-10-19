@@ -9,6 +9,7 @@ from structure_engine import (StructureSettings, StructureSegment, detect_struct
 from profile_calculator import read_ground_points
 from bridge_girder import GirderSettings
 from bridge_pier import PierSettings
+from tunnel_profile import TunnelSettings
 from structure_label import LabelSettings
 from bridge_plan import BridgePlanSection
 from bridge_section import load_bridge_section
@@ -37,12 +38,15 @@ class StructureEditor(ttk.Frame):
         self.plan_section_path=tk.StringVar(value="")
         self.plan_abutment_path=tk.StringVar(value="")
         self._plan_section_cache=None
+        self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
+        self._tunnel_window=None
         self._bridge_window=None
         self._label_window=None
         self.label_vars=[tk.StringVar(value=v) for v in ('STA.','3.0','1','3.0','PSC')]
         self.label_custom_prefix=tk.StringVar(value='서기(현)')
         buttons_settings=ttk.Frame(self); buttons_settings.pack(anchor='w',padx=8,pady=5)
         ttk.Button(buttons_settings,text='교량 설정...',command=self.open_bridge_settings).pack(side='left',padx=3)
+        ttk.Button(buttons_settings,text='터널 설정...',command=self.open_tunnel_settings).pack(side='left',padx=3)
         ttk.Button(buttons_settings,text='구조물 주석 설정...',command=self.open_label_settings).pack(side='left',padx=3)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
@@ -60,6 +64,36 @@ class StructureEditor(ttk.Frame):
         self.tree.bind('<Double-1>',lambda e:self.edit())
         self.status=tk.StringVar(value='구조물 후보 없음')
         ttk.Label(self,textvariable=self.status).pack(anchor='w',padx=8,pady=4)
+
+    def tunnel_settings(self):
+        offset,height,step,color=(v.get().strip() for v in self.tunnel_vars)
+        settings=TunnelSettings(float(offset),float(height),float(step),int(color))
+        settings.validate()
+        return settings
+
+    def open_tunnel_settings(self):
+        if self._tunnel_window is not None and self._tunnel_window.winfo_exists():
+            self._tunnel_window.lift()
+            return
+        window=tk.Toplevel(self)
+        self._tunnel_window=window
+        window.title('터널 본체 설정 · v12.5.5-A')
+        window.transient(self.winfo_toplevel())
+        window.resizable(False,False)
+        frame=ttk.Frame(window,padding=12)
+        frame.pack(fill='both',expand=True)
+        for i,(label,var) in enumerate(zip(('계획선에서 하부 OFFSET (m)','터널 본체 높이 (m)','측점 샘플 간격 (m)','TUNNEL_BODY 색상 (ACI)'),self.tunnel_vars)):
+            ttk.Label(frame,text=label).grid(row=i,column=0,sticky='w',padx=5,pady=5)
+            ttk.Entry(frame,textvariable=var,width=14).grid(row=i,column=1,padx=5,pady=5)
+        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=4,column=0,columnspan=2,sticky='w',pady=5)
+        def apply():
+            try:self.tunnel_settings()
+            except (ValueError,TypeError) as exc:
+                messagebox.showerror('터널 설정',str(exc),parent=window)
+                return
+            window.destroy()
+        ttk.Button(frame,text='확인',command=apply).grid(row=5,column=1,sticky='e',pady=5)
+        window.protocol('WM_DELETE_WINDOW',window.destroy)
 
     def open_bridge_settings(self):
         if self._bridge_window is not None and self._bridge_window.winfo_exists():

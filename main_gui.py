@@ -683,6 +683,7 @@ class AlignmentGUI:
             structures = tuple(self.structure_editor.segments) if (export_profile or export_plan) else ()
             bridge_layer_colors = self.structure_editor.bridge_layer_colors() if export_profile else None
             label_settings = self.structure_editor.label_settings() if export_profile else None
+            tunnel_settings = self.structure_editor.tunnel_settings() if export_profile else None
             plan_bridge_span = self.structure_editor.girder_settings().girder_length if export_plan else 30.0
             plan_bridge_section = self.structure_editor.bridge_plan_section() if export_plan else None
             plan_bridge_pier = self.structure_editor.plan_pier_settings() if export_plan else None
@@ -699,12 +700,12 @@ class AlignmentGUI:
                     if split_length is None:
                         result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
                                                         vertical_curve_lengths=vc_lengths_by_index,
-                                                        structures=structures, girder_settings=girder_settings, pier_settings=pier_settings, bridge_layer_colors=bridge_layer_colors, label_settings=label_settings)
+                                                        structures=structures, girder_settings=girder_settings, pier_settings=pier_settings, bridge_layer_colors=bridge_layer_colors, label_settings=label_settings, tunnel_settings=tunnel_settings)
                         successes.append(('종평면도', str(result['output']), len(vips)))
                     else:
                         from profile_split import export_split_profiles
                         results = export_split_profiles(source, folder, split_length, drawing_options, vc_lengths_by_index,
-                                                        structures, girder_settings, pier_settings, bridge_layer_colors, label_settings)
+                                                        structures, girder_settings, pier_settings, bridge_layer_colors, label_settings, tunnel_settings)
                         successes.append((f'종평면도 {len(results)}장 분할', str(folder), len(vips)))
                 except Exception as exc:
                     failures.append(('종평면도', str(exc)))

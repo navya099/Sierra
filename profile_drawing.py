@@ -22,6 +22,7 @@ from bridge_girder import GirderSettings, draw_bridge_girders
 from bridge_abutment import draw_profile_abutments
 from bridge_pier import PierSettings, draw_profile_piers
 from structure_label import LabelSettings, draw_structure_labels
+from tunnel_profile import TunnelSettings, draw_tunnel_bodies
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            options: DrawingOptions | None = None,
                            vertical_curve_lengths: dict[int, float] | None = None,
                            structures=None, girder_settings: GirderSettings | None = None,
-                           pier_settings: PierSettings | None = None, bridge_layer_colors=None, label_settings: LabelSettings | None = None) -> dict:
+                           pier_settings: PierSettings | None = None, bridge_layer_colors=None, label_settings: LabelSettings | None = None,
+                           tunnel_settings: TunnelSettings | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     source = Path(source_dxf).resolve()
@@ -489,11 +491,20 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
               midpoint, distance_rule_y + ar*.45,
               5.0, 'VIP_ANNOTATION')
 
+    tunnel_count = 0
     girder_count = 0
     abutment_count = 0
     pier_count = 0
     if structures:
         elevation_at = (lambda s: vc_alignment.evaluate(s)[0]) if vc_alignment else (lambda s: raw_plan.at(s)[0])
+        ts = tunnel_settings or TunnelSettings()
+        ts.validate()
+        if 'TUNNEL_BODY' not in doc.layers:
+            _layer(doc,'TUNNEL_BODY',ts.color,25)
+        else:
+            doc.layers.get('TUNNEL_BODY').dxf.color=ts.color
+        tunnel_count = draw_tunnel_bodies(msp, structures, ts, start, end,
+                                          datum_segments, elevation_at, display_sta, display_el)
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
                                            start, end, datum_segments, elevation_at,
                                            display_sta, display_el)
@@ -533,7 +544,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if tmp.exists():
             tmp.unlink()
     return {
-        'output': str(output), 'start': start, 'end': end, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count, 'pier_count': pier_count, 'structure_label_count': label_count,
+        'output': str(output), 'start': start, 'end': end, 'tunnel_polyline_count': tunnel_count, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count, 'pier_count': pier_count, 'structure_label_count': label_count,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
         'major_grid_count': len(major), 'band_station_count': len(band_stations),
         'alignment_station_count': len(alignment_stations) if options.include_alignment_placeholder else 0,
