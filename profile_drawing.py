@@ -24,6 +24,7 @@ from bridge_pier import PierSettings, draw_profile_piers
 from structure_label import LabelSettings, draw_structure_labels
 from tunnel_profile import TunnelSettings, draw_tunnel_bodies
 from tunnel_portal import draw_profile_portals
+from tunnel_portal_custom import draw_custom_profile_portals
 
 
 @dataclass(frozen=True)
@@ -518,9 +519,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 doc.layers.get('TUNNEL_PORTAL').dxf.color=ts.portal.color
             outer_top = ts.section.outer_top if ts.section else -ts.bottom_offset + ts.body_height
             outer_bottom = ts.section.outer_bottom if ts.section else -ts.bottom_offset
-            portal_count = draw_profile_portals(msp,structures,ts.portal,start,end,
-                                                datum_segments,elevation_at,display_sta,display_el,
-                                                outer_top,outer_bottom)
+            if ts.portal.custom_dxf:
+                portal_count = draw_custom_profile_portals(
+                    msp,structures,ts.portal.custom_dxf,start,end,datum_segments,
+                    elevation_at,display_sta,display_el,outer_top,ts.portal.color)
+            else:
+                portal_count = draw_profile_portals(msp,structures,ts.portal,start,end,
+                                                    datum_segments,elevation_at,display_sta,display_el,
+                                                    outer_top,outer_bottom)
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
                                            start, end, datum_segments, elevation_at,
                                            display_sta, display_el)
