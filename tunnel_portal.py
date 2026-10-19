@@ -11,6 +11,7 @@ class PortalSettings:
     color: int = 6
     custom_dxf: str = ""
     sl_width: float = 6.0
+    plan_custom_dxf: str = ""
 
     def validate(self):
         if not all(math.isfinite(v) and v > 0 for v in (self.sl_height, self.portal_length, self.slope)):
@@ -19,6 +20,8 @@ class PortalSettings:
             raise ValueError('SL_WIDTH는 양수여야 합니다.')
         if self.custom_dxf and not Path(self.custom_dxf).is_file():
             raise ValueError(f'사용자 갱문 DXF 파일을 찾을 수 없습니다: {self.custom_dxf}')
+        if self.plan_custom_dxf and not Path(self.plan_custom_dxf).is_file():
+            raise ValueError(f'사용자 평면 갱문 DXF 파일을 찾을 수 없습니다: {self.plan_custom_dxf}')
         if type(self.color) is not int or not 1 <= self.color <= 255:
             raise ValueError('갱문 색상은 1~255 정수여야 합니다.')
 
