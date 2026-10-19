@@ -1,11 +1,11 @@
-"""v12.5.5-D.1.3: portal intersections in unscaled station/elevation coordinates."""
+"""v12.5.5-D.1.4: portal intersections in unscaled station/elevation coordinates."""
 from dataclasses import dataclass
 import math
 
 @dataclass(frozen=True)
 class PortalSettings:
     sl_height: float = 1.0
-    portal_length: float = 10.0  # SL_LENGTH; retain existing GUI/CSV compatibility
+    portal_length: float = 20.0  # SL_LENGTH; retain existing GUI/CSV compatibility
     slope: float = 1.5  # horizontal : vertical = slope : 1
     color: int = 6
 
@@ -61,6 +61,20 @@ def portal_vertices(junction, direction, settings, elevation_at, outer_top, oute
     # With a tall tunnel and a short SL_LENGTH it can fall inside the tunnel;
     # retain the true intersection for inspection rather than inventing a point.
     intersection = tip - direction * run
+    # Geometric feasibility in REAL station/elevation coordinates.
+    # P must be between the portal tip and the tunnel junction, inclusive.
+    # Never alter the true intersection to make an invalid input appear valid.
+    outward_distance = (intersection - junction) * direction
+    tolerance = 1e-8 * max(1.0, settings.portal_length)
+    if outward_distance < -tolerance or outward_distance > settings.portal_length + tolerance:
+        required_length = run
+        raise ValueError(
+            f'갱문 길이 부족 또는 교점 범위 이탈 (STA {junction:.2f}, '
+            f'{"시점" if direction == -1 else "종점"}): '
+            f'SL_LENGTH={settings.portal_length:.3f}m, '
+            f'필요 최소 길이≈{required_length:.3f}m. '
+            'SL_LENGTH, SL_HEIGHT 또는 SLOPE를 조정하세요.'
+        )
     n = max(1, math.ceil(settings.portal_length / 2.0))
     base = [(junction + direction * settings.portal_length * i / n,
              elevation_at(junction + direction * settings.portal_length * i / n) + outer_bottom)

@@ -41,7 +41,7 @@ class StructureEditor(ttk.Frame):
         self.plan_abutment_path=tk.StringVar(value="")
         self._plan_section_cache=None
         self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
-        self.portal_vars=[tk.StringVar(value=v) for v in ('1.0','10.0','1.5','6')]
+        self.portal_vars=[tk.StringVar(value=v) for v in ('1.0','20.0','1.5','6')]
         self.portal_enabled=tk.BooleanVar(value=True)
         self.tunnel_cover_var=tk.StringVar(value='0.0')
         self.tunnel_lining_var=tk.StringVar(value='0.2')
@@ -93,7 +93,7 @@ class StructureEditor(ttk.Frame):
             return
         window=tk.Toplevel(self)
         self._tunnel_window=window
-        window.title('터널 본체 및 갱문 설정 · v12.5.5-D.1')
+        window.title('터널 본체 및 갱문 설정 · v12.5.5-D.1.4')
         window.transient(self.winfo_toplevel())
         window.resizable(False,False)
         frame=ttk.Frame(window,padding=12)
