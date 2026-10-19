@@ -12,6 +12,7 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from bridge_plan import draw_bridge_plan, BridgePlanSection
 from tunnel_plan import draw_tunnel_plan
+from tunnel_plan_portal import draw_plan_portals
 from bridge_plan_pier import draw_plan_piers, PlanPierSettings
 from bridge_plan_abutment import draw_plan_abutments
 
@@ -122,6 +123,11 @@ def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., s
                          section=tunnel_plan_settings.section,
                          sample_step=tunnel_plan_settings.sample_step,
                          lining_thickness=tunnel_plan_settings.lining_thickness)
+        if tunnel_plan_settings.portal is not None:
+            draw_plan_portals(msp, structures, tunnel_plan_settings.portal,
+                              points=points, distances=distances,
+                              position_at=position_at, station_origin=station_origin,
+                              sl_width=tunnel_plan_settings.portal.sl_width)
     output_dxf.parent.mkdir(parents=True,exist_ok=True)
     doc.saveas(output_dxf)
     return [{'sta':v.sta,'x':xy[0],'y':xy[1], 'grade_in':v.gradient_in,'grade_out':v.gradient_out} for v,xy,_ in placements]

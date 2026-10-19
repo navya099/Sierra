@@ -42,6 +42,7 @@ class StructureEditor(ttk.Frame):
         self._plan_section_cache=None
         self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
         self.portal_vars=[tk.StringVar(value=v) for v in ('1.0','20.0','1.5','6')]
+        self.portal_width_var=tk.StringVar(value='6.0')
         self.portal_enabled=tk.BooleanVar(value=True)
         self.portal_mode=tk.StringVar(value='default')
         self.portal_custom_path=tk.StringVar(value='')
@@ -85,7 +86,8 @@ class StructureEditor(ttk.Frame):
         settings=TunnelSettings(float(offset),float(height),float(step),int(color),float(self.tunnel_lining_var.get()),section,
                                 PortalSettings(float(self.portal_vars[0].get()),float(self.portal_vars[1].get()),
                                                float(self.portal_vars[2].get()),int(self.portal_vars[3].get()),
-                                               self.portal_custom_path.get().strip() if self.portal_mode.get()=='dxf' else '')
+                                               self.portal_custom_path.get().strip() if self.portal_mode.get()=='dxf' else '',
+                                               float(self.portal_width_var.get()))
                                 if self.portal_enabled.get() else None)
         settings.validate()
         return settings
@@ -122,9 +124,11 @@ class StructureEditor(ttk.Frame):
         ttk.Button(path_row,text='찾기',command=browse_tunnel).pack(side='left',padx=3)
         ttk.Label(frame,text='DXF: (0,0)=계획선, TUNNEL_OUTER / TUNNEL_INNER 폐합 폴리라인').grid(row=8,column=0,columnspan=2,sticky='w',pady=5)
         ttk.Checkbutton(frame,text='종단 갱문 자동 생성',variable=self.portal_enabled).grid(row=9,column=0,columnspan=2,sticky='w',pady=5)
-        for idx,(caption,var) in enumerate(zip(('SL_HEIGHT (m)','PORTAL_LENGTH (m)','SLOPE (1 : 수평비)','갱문 색상 (ACI)'),self.portal_vars),start=10):
+        for idx,(caption,var) in enumerate(zip(('SL_HEIGHT (m)','SL_LENGTH (m)','SLOPE (1 : 수평비)','갱문 색상 (ACI)'),self.portal_vars),start=10):
             ttk.Label(frame,text=caption).grid(row=idx,column=0,sticky='w',padx=5,pady=3)
             ttk.Entry(frame,textvariable=var,width=14).grid(row=idx,column=1,padx=5,pady=3)
+        ttk.Label(frame,text='SL_WIDTH (평면 갱문 폭, m)').grid(row=18,column=0,sticky='w',padx=5,pady=3)
+        ttk.Entry(frame,textvariable=self.portal_width_var,width=14).grid(row=18,column=1,padx=5,pady=3)
         ttk.Label(frame,text='갱문 방식').grid(row=14,column=0,sticky='w',padx=5,pady=3)
         ttk.Combobox(frame,textvariable=self.portal_mode,values=('default','dxf'),state='readonly',width=12).grid(row=14,column=1,padx=5,pady=3)
         ttk.Label(frame,text='갱문 DXF 경로 (mm)').grid(row=15,column=0,sticky='w',padx=5,pady=3)
@@ -162,7 +166,7 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('터널 설정',str(exc),parent=window)
                 return
             window.destroy()
-        ttk.Button(frame,text='확인',command=apply).grid(row=18,column=1,sticky='e',pady=5)
+        ttk.Button(frame,text='확인',command=apply).grid(row=19,column=1,sticky='e',pady=5)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
 
     def open_bridge_settings(self):
