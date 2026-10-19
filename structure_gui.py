@@ -13,6 +13,7 @@ from structure_label import LabelSettings
 from bridge_plan import BridgePlanSection
 from bridge_section import load_bridge_section
 from bridge_plan_pier import PlanPierSettings
+from bridge_plan_abutment import read_template, DEFAULT_TEMPLATE
 
 class StructureEditor(ttk.Frame):
     def __init__(self, parent, get_context, log):
@@ -34,6 +35,7 @@ class StructureEditor(ttk.Frame):
         self.bridge_color_vars=[tk.StringVar(value=v) for v in ('4','1','1')]
         self.plan_pier_vars=[tk.StringVar(value=v) for v in ("3.0","6.0","6.0","9.0","9.0")]
         self.plan_section_path=tk.StringVar(value="")
+        self.plan_abutment_path=tk.StringVar(value="")
         self._plan_section_cache=None
         self._bridge_window=None
         self._label_window=None
@@ -108,9 +110,23 @@ class StructureEditor(ttk.Frame):
         for i,(label,var) in enumerate(zip(("기둥 지름","코핑 횡방향 폭","코핑 종방향 길이","기초 횡방향 폭","기초 종방향 길이"),self.plan_pier_vars)):
             ttk.Label(plan_pier_frame,text=label).grid(row=i,column=0,sticky="w",padx=5,pady=2)
             ttk.Entry(plan_pier_frame,textvariable=var,width=12).grid(row=i,column=1,padx=5,pady=2)
+        abutment_frame=ttk.LabelFrame(container,text='평면 교대 DXF · v12.5.4-D',padding=8)
+        abutment_frame.pack(fill='x',pady=4)
+        ttk.Label(abutment_frame,text='기본값: 내장 교대일반도.dxf (mm, 원점 0,0)').grid(row=0,column=0,columnspan=3,sticky='w')
+        ttk.Entry(abutment_frame,textvariable=self.plan_abutment_path,width=48,state='readonly').grid(row=1,column=0,columnspan=2,sticky='ew',padx=3)
+        def browse_abutment():
+            path=filedialog.askopenfilename(parent=window,title='교대 평면 형상 DXF',filetypes=[('DXF 파일','*.dxf')])
+            if not path:return
+            try: read_template(path)
+            except Exception as exc:
+                messagebox.showerror('교대 DXF 검증 실패',str(exc),parent=window);return
+            self.plan_abutment_path.set(path)
+        ttk.Button(abutment_frame,text='DXF 불러오기...',command=browse_abutment).grid(row=1,column=2,padx=3)
+        ttk.Button(abutment_frame,text='내장 도면 복원',command=lambda:self.plan_abutment_path.set('')).grid(row=2,column=2,padx=3,pady=3)
         def apply():
             try:
                 self.plan_pier_settings()
+                read_template(self.bridge_abutment_plan_path())
                 self.bridge_plan_section()
                 self.girder_settings()
                 self.pier_settings()
@@ -124,6 +140,9 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='확인',command=apply).pack(side='right',padx=4)
         ttk.Button(buttons,text='닫기',command=window.destroy).pack(side='right',padx=4)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
+
+    def bridge_abutment_plan_path(self):
+        return self.plan_abutment_path.get().strip() or str(DEFAULT_TEMPLATE)
 
     def plan_pier_settings(self):
         settings=PlanPierSettings(*(float(v.get()) for v in self.plan_pier_vars))
