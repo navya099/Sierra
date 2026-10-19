@@ -1,5 +1,6 @@
 """v12.5.5-A: longitudinal tunnel body, independent of portal geometry."""
 from dataclasses import dataclass
+from tunnel_section import TunnelSection
 import math
 
 @dataclass(frozen=True)
@@ -9,6 +10,7 @@ class TunnelSettings:
     sample_step: float = 2.0     # metres along station
     color: int = 5              # AutoCAD ACI
     lining_thickness: float = 0.2  # metres; inner envelope inset
+    section: TunnelSection | None = None  # optional exact vertical extrema from DXF
 
     def validate(self):
         if not all(math.isfinite(x) for x in (self.bottom_offset,self.body_height,self.sample_step,self.lining_thickness)):
@@ -17,6 +19,8 @@ class TunnelSettings:
             raise ValueError('터널 하부 OFFSET은 0 이상, 본체 높이와 샘플 간격은 양수여야 합니다.')
         if self.lining_thickness < 0 or 2*self.lining_thickness >= self.body_height:
             raise ValueError('라이닝 두께는 0 이상이고 본체 높이 절반보다 작아야 합니다.')
+        if self.section is not None:
+            self.section.validate()
         if type(self.color) is not int or not 1 <= self.color <= 255:
             raise ValueError('터널 레이어 ACI 색상은 1~255 정수여야 합니다.')
 
@@ -43,12 +47,16 @@ def draw_tunnel_bodies(msp, structures, settings, start, end, datum_segments,
                 continue
             n=max(1,math.ceil((hi-lo)/settings.sample_step))
             stations=[lo+(hi-lo)*i/n for i in range(n+1)]
-            top=[(display_sta(s),display_el(elevation_at(s)-settings.bottom_offset+settings.body_height,datum.datum_el)) for s in stations]
-            bottom=[(display_sta(s),display_el(elevation_at(s)-settings.bottom_offset,datum.datum_el)) for s in reversed(stations)]
+            outer_bottom = settings.section.outer_bottom if settings.section else -settings.bottom_offset
+            outer_top = settings.section.outer_top if settings.section else -settings.bottom_offset+settings.body_height
+            inner_bottom = settings.section.inner_bottom if settings.section else outer_bottom+settings.lining_thickness
+            inner_top = settings.section.inner_top if settings.section else outer_top-settings.lining_thickness
+            top=[(display_sta(s),display_el(elevation_at(s)+outer_top,datum.datum_el)) for s in stations]
+            bottom=[(display_sta(s),display_el(elevation_at(s)+outer_bottom,datum.datum_el)) for s in reversed(stations)]
             msp.add_lwpolyline(top+bottom,close=True,dxfattribs={'layer':layer})
             t=settings.lining_thickness
-            inner_top=[(display_sta(s),display_el(elevation_at(s)-settings.bottom_offset+settings.body_height-t,datum.datum_el)) for s in stations]
-            inner_bottom=[(display_sta(s),display_el(elevation_at(s)-settings.bottom_offset+t,datum.datum_el)) for s in reversed(stations)]
+            inner_top=[(display_sta(s),display_el(elevation_at(s)+inner_top,datum.datum_el)) for s in stations]
+            inner_bottom=[(display_sta(s),display_el(elevation_at(s)+inner_bottom,datum.datum_el)) for s in reversed(stations)]
             msp.add_lwpolyline(inner_top+inner_bottom,close=True,dxfattribs={'layer':inner_layer})
             count+=2-1
     return count

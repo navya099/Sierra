@@ -10,6 +10,7 @@ from profile_calculator import read_ground_points
 from bridge_girder import GirderSettings
 from bridge_pier import PierSettings
 from tunnel_profile import TunnelSettings
+from tunnel_section import load_tunnel_section
 from structure_label import LabelSettings
 from bridge_plan import BridgePlanSection
 from bridge_section import load_bridge_section
@@ -41,6 +42,8 @@ class StructureEditor(ttk.Frame):
         self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
         self.tunnel_cover_var=tk.StringVar(value='0.0')
         self.tunnel_lining_var=tk.StringVar(value='0.2')
+        self.tunnel_section_mode=tk.StringVar(value='default')
+        self.tunnel_section_path=tk.StringVar(value='')
         self._tunnel_window=None
         self._bridge_window=None
         self._label_window=None
@@ -69,7 +72,12 @@ class StructureEditor(ttk.Frame):
 
     def tunnel_settings(self):
         offset,height,step,color=(v.get().strip() for v in self.tunnel_vars)
-        settings=TunnelSettings(float(offset),float(height),float(step),int(color),float(self.tunnel_lining_var.get()))
+        section=None
+        if self.tunnel_section_mode.get()=='dxf':
+            if not self.tunnel_section_path.get().strip():
+                raise ValueError('사용자 터널 단면 DXF를 선택하세요.')
+            section=load_tunnel_section(self.tunnel_section_path.get())
+        settings=TunnelSettings(float(offset),float(height),float(step),int(color),float(self.tunnel_lining_var.get()),section)
         settings.validate()
         return settings
 
@@ -79,7 +87,7 @@ class StructureEditor(ttk.Frame):
             return
         window=tk.Toplevel(self)
         self._tunnel_window=window
-        window.title('터널 본체 설정 · v12.5.5-B.1')
+        window.title('터널 본체 설정 · v12.5.5-B.2')
         window.transient(self.winfo_toplevel())
         window.resizable(False,False)
         frame=ttk.Frame(window,padding=12)
@@ -91,10 +99,23 @@ class StructureEditor(ttk.Frame):
         ttk.Entry(frame,textvariable=self.tunnel_cover_var,width=14).grid(row=4,column=1,padx=5,pady=5)
         ttk.Label(frame,text='라이닝 두께 (m)').grid(row=5,column=0,sticky='w',padx=5,pady=5)
         ttk.Entry(frame,textvariable=self.tunnel_lining_var,width=14).grid(row=5,column=1,padx=5,pady=5)
-        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=6,column=0,columnspan=2,sticky='w',pady=5)
+        ttk.Label(frame,text='단면 입력 방식').grid(row=6,column=0,sticky='w',padx=5,pady=5)
+        ttk.Combobox(frame,textvariable=self.tunnel_section_mode,values=('default','dxf'),state='readonly',width=12).grid(row=6,column=1,padx=5,pady=5)
+        ttk.Label(frame,text='단면 DXF 경로 (mm)').grid(row=7,column=0,sticky='w',padx=5,pady=5)
+        path_row=ttk.Frame(frame)
+        path_row.grid(row=7,column=1,sticky='w',padx=5,pady=5)
+        ttk.Entry(path_row,textvariable=self.tunnel_section_path,width=26).pack(side='left')
+        def browse_tunnel():
+            path=filedialog.askopenfilename(parent=window,title='터널 표준 단면 DXF 선택',filetypes=[('DXF','*.dxf')])
+            if path:
+                self.tunnel_section_path.set(path)
+                self.tunnel_section_mode.set('dxf')
+        ttk.Button(path_row,text='찾기',command=browse_tunnel).pack(side='left',padx=3)
+        ttk.Label(frame,text='DXF: (0,0)=계획선, TUNNEL_OUTER / TUNNEL_INNER 폐합 폴리라인').grid(row=8,column=0,columnspan=2,sticky='w',pady=5)
+        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=9,column=0,columnspan=2,sticky='w',pady=5)
         def apply():
             try:
-                self.tunnel_settings()
+                ts=self.tunnel_settings()
                 cover=float(self.tunnel_cover_var.get())
                 if not math.isfinite(cover) or cover < 0:
                     raise ValueError('최소 토피고는 0 이상의 유한한 숫자여야 합니다.')
@@ -115,7 +136,7 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('터널 설정',str(exc),parent=window)
                 return
             window.destroy()
-        ttk.Button(frame,text='확인',command=apply).grid(row=7,column=1,sticky='e',pady=5)
+        ttk.Button(frame,text='확인',command=apply).grid(row=10,column=1,sticky='e',pady=5)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
 
     def open_bridge_settings(self):
@@ -271,7 +292,9 @@ class StructureEditor(ttk.Frame):
         tunnel=self.tunnel_settings()
         return StructureSettings(*(float(v.get()) for v in self.settings_vars),
                                  float(self.girder_vars[0].get()) + float(self.girder_vars[2].get()),
-                                 tunnel.body_height,tunnel.bottom_offset,float(self.tunnel_cover_var.get()))
+                                 tunnel.section.body_height if tunnel.section else tunnel.body_height,
+                                 tunnel.section.bottom_offset if tunnel.section else tunnel.bottom_offset,
+                                 float(self.tunnel_cover_var.get()))
 
     def girder_settings(self):
         settings = GirderSettings(*(float(v.get()) for v in self.girder_vars))
