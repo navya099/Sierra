@@ -1,6 +1,7 @@
 """v12.5.5-A: longitudinal tunnel body, independent of portal geometry."""
 from dataclasses import dataclass
 from tunnel_section import TunnelSection
+from tunnel_portal import PortalSettings
 import math
 
 @dataclass(frozen=True)
@@ -11,6 +12,7 @@ class TunnelSettings:
     color: int = 5              # AutoCAD ACI
     lining_thickness: float = 0.2  # metres; inner envelope inset
     section: TunnelSection | None = None  # optional exact vertical extrema from DXF
+    portal: PortalSettings | None = None  # optional built-in longitudinal portals
 
     def validate(self):
         if not all(math.isfinite(x) for x in (self.bottom_offset,self.body_height,self.sample_step,self.lining_thickness)):
@@ -21,6 +23,8 @@ class TunnelSettings:
             raise ValueError('라이닝 두께는 0 이상이고 본체 높이 절반보다 작아야 합니다.')
         if self.section is not None:
             self.section.validate()
+        if self.portal is not None:
+            self.portal.validate()
         if type(self.color) is not int or not 1 <= self.color <= 255:
             raise ValueError('터널 레이어 ACI 색상은 1~255 정수여야 합니다.')
 

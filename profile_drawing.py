@@ -23,6 +23,7 @@ from bridge_abutment import draw_profile_abutments
 from bridge_pier import PierSettings, draw_profile_piers
 from structure_label import LabelSettings, draw_structure_labels
 from tunnel_profile import TunnelSettings, draw_tunnel_bodies
+from tunnel_portal import draw_profile_portals
 
 
 @dataclass(frozen=True)
@@ -492,6 +493,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
               5.0, 'VIP_ANNOTATION')
 
     tunnel_count = 0
+    portal_count = 0
     girder_count = 0
     abutment_count = 0
     pier_count = 0
@@ -509,6 +511,16 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             doc.layers.get('TUNNEL_INNER').dxf.color=ts.color
         tunnel_count = draw_tunnel_bodies(msp, structures, ts, start, end,
                                           datum_segments, elevation_at, display_sta, display_el)
+        if ts.portal is not None:
+            if 'TUNNEL_PORTAL' not in doc.layers:
+                _layer(doc,'TUNNEL_PORTAL',ts.portal.color,25)
+            else:
+                doc.layers.get('TUNNEL_PORTAL').dxf.color=ts.portal.color
+            outer_top = ts.section.outer_top if ts.section else -ts.bottom_offset + ts.body_height
+            outer_bottom = ts.section.outer_bottom if ts.section else -ts.bottom_offset
+            portal_count = draw_profile_portals(msp,structures,ts.portal,start,end,
+                                                datum_segments,elevation_at,display_sta,display_el,
+                                                outer_top,outer_bottom)
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
                                            start, end, datum_segments, elevation_at,
                                            display_sta, display_el)
@@ -548,7 +560,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if tmp.exists():
             tmp.unlink()
     return {
-        'output': str(output), 'start': start, 'end': end, 'tunnel_polyline_count': tunnel_count, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count, 'pier_count': pier_count, 'structure_label_count': label_count,
+        'output': str(output), 'start': start, 'end': end, 'tunnel_polyline_count': tunnel_count, 'tunnel_portal_count': portal_count, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count, 'pier_count': pier_count, 'structure_label_count': label_count,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
         'major_grid_count': len(major), 'band_station_count': len(band_stations),
         'alignment_station_count': len(alignment_stations) if options.include_alignment_placeholder else 0,
