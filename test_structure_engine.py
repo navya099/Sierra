@@ -12,7 +12,37 @@ class StructureEngineTests(unittest.TestCase):
         self.assertEqual(len(s),1)
         self.assertEqual(s[0].kind,'TUNNEL')
         self.assertAlmostEqual(s[0].max_height,50)
-        self.assertAlmostEqual(s[0].length,300)
+        self.assertAlmostEqual(s[0].length,258)
+        self.assertAlmostEqual(s[0].start_sta,21)
+        self.assertAlmostEqual(s[0].end_sta,279)
+    def test_tunnel_height_change_recalculates_boundaries(self):
+        a=VerticalAlignment([(0,0),(300,0)])
+        g=[(0,0),(150,50),(300,0)]
+        low=detect_structures(g,a,StructureSettings(tunnel_body_height=9,tunnel_bottom_offset=2))
+        high=detect_structures(g,a,StructureSettings(tunnel_body_height=13,tunnel_bottom_offset=2))
+        self.assertAlmostEqual(low[0].start_sta,21)
+        self.assertAlmostEqual(high[0].start_sta,33)
+        self.assertLess(high[0].length,low[0].length)
+
+    def test_tunnel_min_cover(self):
+        a=VerticalAlignment([(0,0),(300,0)])
+        g=[(0,0),(150,50),(300,0)]
+        result=detect_structures(g,a,StructureSettings(tunnel_min_cover=3))
+        self.assertAlmostEqual(result[0].start_sta,30)
+        self.assertAlmostEqual(result[0].end_sta,270)
+
+    def test_short_after_trim_is_rejected(self):
+        a=VerticalAlignment([(0,0),(110,0)])
+        g=[(0,0),(55,50),(110,0)]
+        self.assertEqual(detect_structures(g,a),[])
+
+    def test_bridge_unchanged_with_tunnel_dimensions(self):
+        a=VerticalAlignment([(0,30),(300,30)])
+        g=[(0,30),(150,0),(300,30)]
+        x=detect_structures(g,a,StructureSettings(tunnel_body_height=15,tunnel_min_cover=4))
+        self.assertAlmostEqual(x[0].start_sta,25)
+        self.assertAlmostEqual(x[0].end_sta,275)
+
     def test_bridge(self):
         a=VerticalAlignment([(0,30),(300,30)])
         g=[(0,30),(150,0),(300,30)]

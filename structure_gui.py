@@ -39,6 +39,7 @@ class StructureEditor(ttk.Frame):
         self.plan_abutment_path=tk.StringVar(value="")
         self._plan_section_cache=None
         self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
+        self.tunnel_cover_var=tk.StringVar(value='0.0')
         self._tunnel_window=None
         self._bridge_window=None
         self._label_window=None
@@ -77,7 +78,7 @@ class StructureEditor(ttk.Frame):
             return
         window=tk.Toplevel(self)
         self._tunnel_window=window
-        window.title('터널 본체 설정 · v12.5.5-A')
+        window.title('터널 본체 설정 · v12.5.5-A.1')
         window.transient(self.winfo_toplevel())
         window.resizable(False,False)
         frame=ttk.Frame(window,padding=12)
@@ -85,14 +86,33 @@ class StructureEditor(ttk.Frame):
         for i,(label,var) in enumerate(zip(('계획선에서 하부 OFFSET (m)','터널 본체 높이 (m)','측점 샘플 간격 (m)','TUNNEL_BODY 색상 (ACI)'),self.tunnel_vars)):
             ttk.Label(frame,text=label).grid(row=i,column=0,sticky='w',padx=5,pady=5)
             ttk.Entry(frame,textvariable=var,width=14).grid(row=i,column=1,padx=5,pady=5)
-        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=4,column=0,columnspan=2,sticky='w',pady=5)
+        ttk.Label(frame,text='최소 토피고 (m)').grid(row=4,column=0,sticky='w',padx=5,pady=5)
+        ttk.Entry(frame,textvariable=self.tunnel_cover_var,width=14).grid(row=4,column=1,padx=5,pady=5)
+        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=5,column=0,columnspan=2,sticky='w',pady=5)
         def apply():
-            try:self.tunnel_settings()
-            except (ValueError,TypeError) as exc:
+            try:
+                self.tunnel_settings()
+                cover=float(self.tunnel_cover_var.get())
+                if not math.isfinite(cover) or cover < 0:
+                    raise ValueError('최소 토피고는 0 이상의 유한한 숫자여야 합니다.')
+                path,alignment=self.get_context()
+                # A changed section must not silently overwrite manual stations.
+                if self.segments and path and alignment is not None:
+                    if not messagebox.askyesno('터널 범위 재계산',
+                            '변경된 터널 높이/하부 OFFSET/토피고로 자동 구조물 범위를 재계산합니다.\n'
+                            '수동 구조물은 유지하고 자동 구조물만 갱신할까요?',parent=window):
+                        return
+                    manual=[seg for seg in self.segments if seg.source != 'AUTO']
+                    automatic=detect_structures(read_ground_points(path),alignment,self._settings())
+                    self.segments=sorted(manual+automatic,key=lambda seg:seg.start_sta)
+                    self.dirty=True
+                    self._refresh()
+                    self.log('터널 단면 변경: 자동 구조물 재판정 및 경계 갱신 완료 (수동 구조물 유지)')
+            except (ValueError,TypeError,OSError) as exc:
                 messagebox.showerror('터널 설정',str(exc),parent=window)
                 return
             window.destroy()
-        ttk.Button(frame,text='확인',command=apply).grid(row=5,column=1,sticky='e',pady=5)
+        ttk.Button(frame,text='확인',command=apply).grid(row=6,column=1,sticky='e',pady=5)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
 
     def open_bridge_settings(self):
@@ -245,8 +265,10 @@ class StructureEditor(ttk.Frame):
         self.status.set(f'{len(self.segments)}개 구조물 · 터널 {sum(s.kind=="TUNNEL" for s in self.segments)}개 · 교량 {sum(s.kind=="BRIDGE" for s in self.segments)}개'+(' · 미저장' if self.dirty else ''))
 
     def _settings(self):
+        tunnel=self.tunnel_settings()
         return StructureSettings(*(float(v.get()) for v in self.settings_vars),
-                                 float(self.girder_vars[0].get()) + float(self.girder_vars[2].get()))
+                                 float(self.girder_vars[0].get()) + float(self.girder_vars[2].get()),
+                                 tunnel.body_height,tunnel.bottom_offset,float(self.tunnel_cover_var.get()))
 
     def girder_settings(self):
         settings = GirderSettings(*(float(v.get()) for v in self.girder_vars))

@@ -24,6 +24,9 @@ class StructureSettings:
     bridge_min_length: float = 100.0
     bridge_start_fill_h: float = 5.0
     girder_clearance_depth: float = 0.0  # top offset + girder height
+    tunnel_body_height: float = 9.0
+    tunnel_bottom_offset: float = 2.0
+    tunnel_min_cover: float = 0.0
 
     def __post_init__(self):
         if any(not math.isfinite(v) or v < 0 for v in asdict(self).values()):
@@ -164,6 +167,38 @@ def detect_structures(ground_points, alignment: VerticalAlignment,
                         counters[kind]+=1
                         results.append(StructureSegment(kind,start,end,diff(local_peak),local_peak,'AUTO',f'B{counters[kind]}'))
                     continue
+            if kind == 'TUNNEL':
+                # Candidate detection is based ONLY on design-ground cut depth.
+                # Final tunnel bounds use ground - (design - bottom_offset + body_height).
+                # This keeps the two passes acyclic, even when dimensions change.
+                required_cut=(settings.tunnel_body_height - settings.tunnel_bottom_offset
+                              + settings.tunnel_min_cover)
+                def cover_margin(sta):
+                    return -diff(sta)-required_cut
+                parts=[a]+[x for x in fine if a < x < b]+[b]
+                crossings=[]
+                for x,y in zip(parts,parts[1:]):
+                    if cover_margin(x)*cover_margin(y) < 0:
+                        r=_roots(cover_margin,x,y)
+                        if r is not None: crossings.append(r)
+                bounds=sorted(set(parts+crossings))
+                eligible=[]
+                active_start=None
+                for x,y in zip(bounds,bounds[1:]):
+                    if y-x < 1e-7: continue
+                    if cover_margin((x+y)/2) >= -1e-8:
+                        if active_start is None: active_start=x
+                    elif active_start is not None:
+                        eligible.append((active_start,x)); active_start=None
+                if active_start is not None: eligible.append((active_start,b))
+                for start,end in eligible:
+                    if end-start+1e-7 < min_length: continue
+                    local=[start,end]+[x for x in fine if start < x < end]
+                    local_peak=min(local,key=diff)
+                    counters[kind]+=1
+                    results.append(StructureSegment(kind,start,end,-diff(local_peak),
+                                                    local_peak,'AUTO',f'T{counters[kind]}'))
+                continue
             counters[kind] += 1
             prefix = 'T' if kind == 'TUNNEL' else 'B'
             results.append(StructureSegment(kind,a,b,height,peak,'AUTO',f'{prefix}{counters[kind]}'))
