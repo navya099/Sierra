@@ -41,7 +41,7 @@ def portal_vertices(junction, direction, settings, elevation_at, outer_top, oute
     At the tunnel junction the base/roof use actual outer-bottom/outer-top.
     The portal tip is SL_LENGTH outward. A vertical SL_HEIGHT wall rises
     from the base at the tip. Its sloped roof rises toward the tunnel and
-    intersects the horizontal tangent roof extension from the junction.
+    intersects the actual outer roof profile, including grade and vertical curves.
     """
     settings.validate()
     if direction not in (-1, 1):
@@ -51,37 +51,79 @@ def portal_vertices(junction, direction, settings, elevation_at, outer_top, oute
     base_t = elevation_at(tip) + outer_bottom
     wall_top = base_t + settings.sl_height
     roof_j = elevation_at(junction) + outer_top
-    rise = roof_j - wall_top
-    if rise <= 1e-9:
-        raise ValueError('갱문 수직벽 상단이 터널 외측 상단보다 높습니다. SL_HEIGHT를 줄이세요.')
-    # SLOPE is the REAL horizontal:vertical ratio, independent of print scales.
-    # Calculate intersection in unscaled station/elevation space.
-    run = rise * settings.slope
-    # The intersection is computed on an unbounded roof extension, as in CAD.
-    # With a tall tunnel and a short SL_LENGTH it can fall inside the tunnel;
-    # retain the true intersection for inspection rather than inventing a point.
-    intersection = tip - direction * run
-    # Geometric feasibility in REAL station/elevation coordinates.
-    # P must be between the portal tip and the tunnel junction, inclusive.
-    # Never alter the true intersection to make an invalid input appear valid.
-    outward_distance = (intersection - junction) * direction
-    tolerance = 1e-8 * max(1.0, settings.portal_length)
-    if outward_distance < -tolerance or outward_distance > settings.portal_length + tolerance:
-        required_length = run
+
+    # Solve in REAL STA/EL coordinates; print scales must never affect P.
+    # t=0 is the outer portal tip, t=L is the tunnel junction.
+    # The rising portal slope intersects the actual (possibly curved)
+    # outer roof elevation profile.
+    def roof_at(t):
+        sta = tip - direction * t
+        return elevation_at(sta) + outer_top
+
+    def residual(t):
+        return wall_top + t / settings.slope - roof_at(t)
+
+    n_scan = max(32, math.ceil(settings.portal_length / 0.25))
+    t_prev, f_prev = 0.0, residual(0.0)
+    intersection_run = None
+    if abs(f_prev) < 1e-9:
+        intersection_run = 0.0
+    else:
+        for i in range(1, n_scan + 1):
+            t = settings.portal_length * i / n_scan
+            f = residual(t)
+            if abs(f) < 1e-9:
+                intersection_run = t
+                break
+            if f_prev * f < 0:
+                lo, hi = t_prev, t
+                flo = f_prev
+                for _ in range(65):
+                    mid = (lo + hi) / 2
+                    fm = residual(mid)
+                    if abs(fm) < 1e-11 or hi - lo < 1e-10:
+                        lo = hi = mid
+                        break
+                    if flo * fm <= 0:
+                        hi = mid
+                    else:
+                        lo, flo = mid, fm
+                intersection_run = (lo + hi) / 2
+                break
+            t_prev, f_prev = t, f
+
+    if intersection_run is None:
+        # The old horizontal-roof estimate is only a diagnostic hint;
+        # it is NOT used as an intersection or a geometry substitute.
+        approximate = max(0.0, (roof_j - wall_top) * settings.slope)
         raise ValueError(
             f'갱문 길이 부족 또는 교점 범위 이탈 (STA {junction:.2f}, '
             f'{"시점" if direction == -1 else "종점"}): '
             f'SL_LENGTH={settings.portal_length:.3f}m, '
-            f'필요 최소 길이≈{required_length:.3f}m. '
-            'SL_LENGTH, SL_HEIGHT 또는 SLOPE를 조정하세요.'
+            f'수평 천장 가정 시 필요 길이≈{approximate:.3f}m. '
+            '실제 종단구배·종곡선을 반영한 갱문 경사선과 천장선의 교점이 '
+            '갱문 범위 안에 없습니다. SL_LENGTH, SL_HEIGHT 또는 SLOPE를 조정하세요.'
         )
+
+    intersection = tip - direction * intersection_run
+    intersection_el = roof_at(intersection_run)
     n = max(1, math.ceil(settings.portal_length / 2.0))
     base = [(junction + direction * settings.portal_length * i / n,
              elevation_at(junction + direction * settings.portal_length * i / n) + outer_bottom)
             for i in range(n + 1)]
-    # Junction bottom -> tip bottom -> tip wall top -> slope/roof intersection
-    # -> junction roof. Reversed orientation is valid for end portals.
-    return base + [(tip, wall_top), (intersection, roof_j), (junction, roof_j)]
+
+    # Follow the identical outer-roof elevation function from P to the
+    # junction, including vertical curves; no horizontal shortcut.
+    roof_length = settings.portal_length - intersection_run
+    n_roof = max(1, math.ceil(roof_length / 2.0))
+    roof = []
+    for i in range(n_roof + 1):
+        t = intersection_run + roof_length * i / n_roof
+        sta = tip - direction * t
+        roof.append((sta, roof_at(t)))
+    roof[0] = (intersection, intersection_el)
+    roof[-1] = (junction, roof_j)
+    return base + [(tip, wall_top)] + roof
 
 
 def draw_profile_portals(msp, structures, settings, start, end, datum_segments,
