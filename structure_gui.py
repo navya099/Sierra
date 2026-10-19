@@ -13,6 +13,7 @@ from tunnel_profile import TunnelSettings
 from tunnel_portal import PortalSettings
 from tunnel_section import load_tunnel_section
 from structure_label import LabelSettings
+from structure_plan_label import PlanLabelSettings
 from bridge_plan import BridgePlanSection
 from bridge_section import load_bridge_section
 from bridge_plan_pier import PlanPierSettings
@@ -55,12 +56,15 @@ class StructureEditor(ttk.Frame):
         self._tunnel_window=None
         self._bridge_window=None
         self._label_window=None
+        self.plan_label_enabled=tk.BooleanVar(value=True)
+        self.plan_label_vars=[tk.StringVar(value=v) for v in ('15.0','3.0','STRUCTURE_LABEL_PLAN','1')]
         self.label_vars=[tk.StringVar(value=v) for v in ('STA.','3.0','1','3.0','PSC')]
         self.label_custom_prefix=tk.StringVar(value='서기(현)')
         buttons_settings=ttk.Frame(self); buttons_settings.pack(anchor='w',padx=8,pady=5)
         ttk.Button(buttons_settings,text='교량 설정...',command=self.open_bridge_settings).pack(side='left',padx=3)
         ttk.Button(buttons_settings,text='터널 설정...',command=self.open_tunnel_settings).pack(side='left',padx=3)
         ttk.Button(buttons_settings,text='구조물 주석 설정...',command=self.open_label_settings).pack(side='left',padx=3)
+        ttk.Button(buttons_settings,text='평면 레이블 설정...',command=self.open_plan_label_settings).pack(side='left',padx=3)
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
@@ -287,6 +291,29 @@ class StructureEditor(ttk.Frame):
         settings=LabelSettings(actual_prefix,float(height),int(color),float(margin),bridge_type)
         settings.validate()
         return settings
+
+    def plan_label_settings(self):
+        if not self.plan_label_enabled.get(): return None
+        offset,height,layer,color=(v.get().strip() for v in self.plan_label_vars)
+        settings=PlanLabelSettings(float(offset),float(height),layer,int(color))
+        settings.validate()
+        return settings
+
+    def open_plan_label_settings(self):
+        win=tk.Toplevel(self)
+        win.title('평면 구조물 레이블 설정 · v12.5.5-E.1')
+        frame=ttk.Frame(win,padding=12);frame.pack(fill='both',expand=True)
+        ttk.Checkbutton(frame,text='평면 구조물 레이블 출력',variable=self.plan_label_enabled).grid(row=0,column=0,columnspan=2,sticky='w',pady=4)
+        for i,(caption,var) in enumerate(zip(('선형 이격거리 (m, +좌측 / -우측)','문자 높이 (m)','레이어','색상 (ACI)'),self.plan_label_vars),start=1):
+            ttk.Label(frame,text=caption).grid(row=i,column=0,sticky='w',padx=4,pady=5)
+            ttk.Entry(frame,textvariable=var,width=25).grid(row=i,column=1,sticky='w',padx=4,pady=5)
+        ttk.Label(frame,text='기존 종단 레이블의 구조물 명칭·측점 표기 설정 공유').grid(row=5,column=0,columnspan=2,sticky='w',pady=5)
+        def apply():
+            try:self.plan_label_settings()
+            except (ValueError,TypeError) as exc:
+                messagebox.showerror('평면 레이블 설정',str(exc),parent=win);return
+            win.destroy()
+        ttk.Button(frame,text='확인',command=apply).grid(row=6,column=1,sticky='e',pady=6)
 
     def open_label_settings(self):
         if self._label_window is not None and self._label_window.winfo_exists():

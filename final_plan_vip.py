@@ -14,6 +14,8 @@ from bridge_plan import draw_bridge_plan, BridgePlanSection
 from tunnel_plan import draw_tunnel_plan
 from tunnel_plan_portal import draw_plan_portals
 from tunnel_plan_portal_custom import draw_custom_plan_portals
+from structure_plan_label import draw_plan_structure_labels, PlanLabelSettings
+from structure_label import LabelSettings
 from bridge_plan_pier import draw_plan_piers, PlanPierSettings
 from bridge_plan_abutment import draw_plan_abutments
 
@@ -89,7 +91,7 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
         else:
             label.dxf.insert = tr(*text_xy)
 
-def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=3., vips=None, structures=(), bridge_nominal_span=30., bridge_plan_section: BridgePlanSection | None = None, bridge_plan_pier_settings: PlanPierSettings | None = None, bridge_abutment_plan_dxf=None, tunnel_plan_settings=None):
+def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., stem=30., arm=10.5, text_height=3., vips=None, structures=(), bridge_nominal_span=30., bridge_plan_section: BridgePlanSection | None = None, bridge_plan_pier_settings: PlanPierSettings | None = None, bridge_abutment_plan_dxf=None, tunnel_plan_settings=None, plan_label_settings=None, label_settings=None):
     plan_dxf=Path(plan_dxf).resolve();profile_dxf=Path(profile_dxf).resolve();output_dxf=Path(output_dxf).resolve()
     if output_dxf in (plan_dxf,profile_dxf): raise ValueError('Output must differ from both source DXFs')
     if not all(math.isfinite(x) for x in (station_origin,stem,arm,text_height)) or min(stem,arm,text_height)<=0:
@@ -135,6 +137,11 @@ def create_final_plan(plan_dxf, profile_dxf, output_dxf, *, station_origin=0., s
                                   points=points, distances=distances,
                                   position_at=position_at, station_origin=station_origin,
                                   sl_width=tunnel_plan_settings.portal.sl_width)
+    if plan_label_settings is not None:
+        draw_plan_structure_labels(msp,structures,plan_label_settings,
+                                   label_settings or LabelSettings(),
+                                   points=points,distances=distances,
+                                   position_at=position_at,station_origin=station_origin)
     output_dxf.parent.mkdir(parents=True,exist_ok=True)
     doc.saveas(output_dxf)
     return [{'sta':v.sta,'x':xy[0],'y':xy[1], 'grade_in':v.gradient_in,'grade_out':v.gradient_out} for v,xy,_ in placements]
