@@ -16,6 +16,10 @@ class TunnelSection:
     outer_top: float
     inner_bottom: float
     inner_top: float
+    outer_left: float = -5.0
+    outer_right: float = 5.0
+    inner_left: float = -4.8
+    inner_right: float = 4.8
 
     @property
     def body_height(self):
@@ -29,6 +33,8 @@ class TunnelSection:
         a,b,c,d=self.outer_bottom,self.outer_top,self.inner_bottom,self.inner_top
         if not all(math.isfinite(x) for x in (a,b,c,d)) or not (a < c < d < b):
             raise ValueError('터널 내공의 상·하단이 라이닝 외곽 내부에 있어야 합니다.')
+        if not (self.outer_left < self.inner_left < self.inner_right < self.outer_right):
+            raise ValueError('터널 내공 좌우 폭은 외곽 내부에 있어야 합니다.')
         if a > 0:
             raise ValueError('터널 외측 하단은 계획선 기준점(0,0) 이하에 있어야 합니다.')
 
@@ -67,6 +73,6 @@ def load_tunnel_section(path, unit_scale=0.001):
     inner=_bounds(found['TUNNEL_INNER'][0],'TUNNEL_INNER')
     if not (outer[0] < inner[0] < inner[2] < outer[2]):
         raise ValueError('내공의 좌우 외곽도 라이닝 외측 내부에 있어야 합니다.')
-    section=TunnelSection(outer[1]*unit_scale,outer[3]*unit_scale,inner[1]*unit_scale,inner[3]*unit_scale)
+    section=TunnelSection(outer[1]*unit_scale,outer[3]*unit_scale,inner[1]*unit_scale,inner[3]*unit_scale,outer[0]*unit_scale,outer[2]*unit_scale,inner[0]*unit_scale,inner[2]*unit_scale)
     section.validate()
     return section
