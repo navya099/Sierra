@@ -503,6 +503,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             _layer(doc,'TUNNEL_BODY',ts.color,25)
         else:
             doc.layers.get('TUNNEL_BODY').dxf.color=ts.color
+        if 'TUNNEL_INNER' not in doc.layers:
+            _layer(doc,'TUNNEL_INNER',ts.color,25)
+        else:
+            doc.layers.get('TUNNEL_INNER').dxf.color=ts.color
         tunnel_count = draw_tunnel_bodies(msp, structures, ts, start, end,
                                           datum_segments, elevation_at, display_sta, display_el)
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),

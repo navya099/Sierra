@@ -40,6 +40,7 @@ class StructureEditor(ttk.Frame):
         self._plan_section_cache=None
         self.tunnel_vars=[tk.StringVar(value=v) for v in ('2.0','9.0','2.0','5')]
         self.tunnel_cover_var=tk.StringVar(value='0.0')
+        self.tunnel_lining_var=tk.StringVar(value='0.2')
         self._tunnel_window=None
         self._bridge_window=None
         self._label_window=None
@@ -68,7 +69,7 @@ class StructureEditor(ttk.Frame):
 
     def tunnel_settings(self):
         offset,height,step,color=(v.get().strip() for v in self.tunnel_vars)
-        settings=TunnelSettings(float(offset),float(height),float(step),int(color))
+        settings=TunnelSettings(float(offset),float(height),float(step),int(color),float(self.tunnel_lining_var.get()))
         settings.validate()
         return settings
 
@@ -78,7 +79,7 @@ class StructureEditor(ttk.Frame):
             return
         window=tk.Toplevel(self)
         self._tunnel_window=window
-        window.title('터널 본체 설정 · v12.5.5-A.1')
+        window.title('터널 본체 설정 · v12.5.5-B.1')
         window.transient(self.winfo_toplevel())
         window.resizable(False,False)
         frame=ttk.Frame(window,padding=12)
@@ -88,7 +89,9 @@ class StructureEditor(ttk.Frame):
             ttk.Entry(frame,textvariable=var,width=14).grid(row=i,column=1,padx=5,pady=5)
         ttk.Label(frame,text='최소 토피고 (m)').grid(row=4,column=0,sticky='w',padx=5,pady=5)
         ttk.Entry(frame,textvariable=self.tunnel_cover_var,width=14).grid(row=4,column=1,padx=5,pady=5)
-        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=5,column=0,columnspan=2,sticky='w',pady=5)
+        ttk.Label(frame,text='라이닝 두께 (m)').grid(row=5,column=0,sticky='w',padx=5,pady=5)
+        ttk.Entry(frame,textvariable=self.tunnel_lining_var,width=14).grid(row=5,column=1,padx=5,pady=5)
+        ttk.Label(frame,text='갱문 제외 · DATUM 경계에서 폐합 형상 분리').grid(row=6,column=0,columnspan=2,sticky='w',pady=5)
         def apply():
             try:
                 self.tunnel_settings()
@@ -112,7 +115,7 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('터널 설정',str(exc),parent=window)
                 return
             window.destroy()
-        ttk.Button(frame,text='확인',command=apply).grid(row=6,column=1,sticky='e',pady=5)
+        ttk.Button(frame,text='확인',command=apply).grid(row=7,column=1,sticky='e',pady=5)
         window.protocol('WM_DELETE_WINDOW',window.destroy)
 
     def open_bridge_settings(self):
