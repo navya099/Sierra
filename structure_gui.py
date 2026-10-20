@@ -611,6 +611,136 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='선택 항목 삭제',command=remove).pack(side='left',padx=5)
         ttk.Button(buttons,text='세부 공사비 XLSX 산출...',command=export).pack(side='right',padx=5)
 
+    def open_nonconstruction_cost_dialog(self):
+        """T1: manually entered non-construction costs, isolated from D5."""
+        from nonconstruction_cost import (
+            CATEGORIES, DEFAULT_ITEMS, CostItem, parse_amount,
+            validate, summarize, save_json, load_json, export_xlsx
+        )
+        win = tk.Toplevel(self)
+        win.title('v12.7.4-T1 공사비 외 비용 산정')
+        win.geometry('1020x610')
+        win.transient(self.winfo_toplevel())
+        ttk.Label(win, text='공사비 외 비용 직접 입력 (원). D5 공사비와 합산하지 않습니다.',
+                  padding=8).pack(anchor='w')
+        columns = ('분류', '항목명', '금액(원)', '산정 근거', '비고')
+        tree = ttk.Treeview(win, columns=columns, show='headings', height=11)
+        widths = (120, 180, 140, 290, 200)
+        for col, width in zip(columns, widths):
+            tree.heading(col, text=col)
+            tree.column(col, width=width, anchor='e' if col == '금액(원)' else 'w')
+        tree.pack(fill='both', expand=True, padx=10, pady=5)
+        editor = ttk.LabelFrame(win, text='항목 입력 / 선택 행 수정', padding=8)
+        editor.pack(fill='x', padx=10)
+        cat = tk.StringVar(value=CATEGORIES[0])
+        name = tk.StringVar()
+        amount = tk.StringVar(value='0')
+        basis = tk.StringVar()
+        note = tk.StringVar()
+        for idx, (label, var) in enumerate((('분류', cat), ('항목명', name), ('금액(원)', amount),
+                                            ('산정 근거', basis), ('비고', note))):
+            ttk.Label(editor, text=label).grid(row=0, column=idx, sticky='w')
+            if idx == 0:
+                ttk.Combobox(editor, textvariable=var, values=CATEGORIES,
+                             state='readonly', width=14).grid(row=1, column=idx, padx=3, sticky='ew')
+            else:
+                ttk.Entry(editor, textvariable=var, width=(36 if idx == 3 else 19)).grid(
+                    row=1, column=idx, padx=3, sticky='ew')
+            editor.columnconfigure(idx, weight=2 if idx == 3 else 1)
+        selected_id = [None]
+        def pick(_event=None):
+            ids = tree.selection()
+            if not ids: return
+            selected_id[0] = ids[0]
+            values = tree.item(ids[0], 'values')
+            for var, value in zip((cat, name, amount, basis, note), values):
+                var.set(value)
+        tree.bind('<<TreeviewSelect>>', pick)
+        def read_all():
+            return validate([
+                CostItem(v[0], v[1], parse_amount(v[2]), v[3], v[4])
+                for v in (tree.item(i, 'values') for i in tree.get_children())
+            ])
+        def refresh():
+            try:
+                totals = summarize(read_all())
+                total_var.set('  |  '.join(f'{k}: {int(v):,}원' for k,v in totals.items())
+                              + f'  |  합계: {int(sum(totals.values())):,}원')
+            except ValueError as exc:
+                total_var.set(str(exc))
+        def apply():
+            try:
+                item = CostItem(cat.get(), name.get(), parse_amount(amount.get()),
+                                basis.get(), note.get())
+                values = (item.category, item.name.strip(), str(item.amount), item.basis, item.note)
+                rows = [CostItem(*(tree.item(i,'values')[:2]),
+                                 parse_amount(tree.item(i,'values')[2]),
+                                 *tree.item(i,'values')[3:]) for i in tree.get_children()
+                        if i != selected_id[0]]
+                validate(rows + [item])
+                if selected_id[0] and tree.exists(selected_id[0]):
+                    tree.item(selected_id[0], values=values)
+                else:
+                    tree.insert('', 'end', values=values)
+                selected_id[0] = None
+                tree.selection_remove(tree.selection())
+                refresh()
+            except (ValueError,TypeError) as exc:
+                messagebox.showerror('항목 검증', str(exc), parent=win)
+        def delete():
+            for item_id in tree.selection(): tree.delete(item_id)
+            selected_id[0] = None
+            refresh()
+        def clear_selection():
+            selected_id[0] = None
+            tree.selection_remove(tree.selection())
+            name.set(''); amount.set('0'); basis.set(''); note.set('')
+        actions = ttk.Frame(win, padding=6)
+        actions.pack(fill='x')
+        ttk.Button(actions, text='추가 / 선택 행 수정', command=apply).pack(side='left', padx=4)
+        ttk.Button(actions, text='선택 삭제', command=delete).pack(side='left', padx=4)
+        ttk.Button(actions, text='신규 항목 입력', command=clear_selection).pack(side='left', padx=4)
+        total_var = tk.StringVar()
+        ttk.Label(win, textvariable=total_var, padding=8, wraplength=980).pack(anchor='w')
+        def replace(items):
+            for row in tree.get_children(): tree.delete(row)
+            for item in items:
+                tree.insert('', 'end', values=(item.category,item.name,str(item.amount),item.basis,item.note))
+            clear_selection(); refresh()
+        def save():
+            try:
+                items = read_all()
+                path = filedialog.asksaveasfilename(parent=win, title='입력 내역 저장',
+                    defaultextension='.json', filetypes=[('JSON','*.json')])
+                if path:
+                    save_json(path, items)
+                    messagebox.showinfo('저장 완료', path, parent=win)
+            except (ValueError,OSError) as exc:
+                messagebox.showerror('저장 실패',str(exc),parent=win)
+        def load():
+            path = filedialog.askopenfilename(parent=win, title='입력 내역 불러오기',
+                                              filetypes=[('JSON','*.json')])
+            if not path:return
+            try: replace(load_json(path))
+            except (ValueError,KeyError,TypeError,OSError) as exc:
+                messagebox.showerror('불러오기 실패',str(exc),parent=win)
+        def export():
+            try:
+                items = read_all()
+                if not items:raise ValueError('출력할 비용 항목이 없습니다.')
+                path = filedialog.asksaveasfilename(parent=win, title='공사비 외 비용 산정서',
+                    defaultextension='.xlsx', filetypes=[('Excel','*.xlsx')])
+                if path:
+                    export_xlsx(path, items)
+                    self.log(f'공사비 외 비용 산정서 저장: {path}')
+                    messagebox.showinfo('출력 완료','공사비 외 비용 XLSX 저장 완료\\n(총사업비 아님)',parent=win)
+            except (ValueError,OSError,ImportError) as exc:
+                messagebox.showerror('출력 실패',str(exc),parent=win)
+        ttk.Button(actions, text='JSON 불러오기', command=load).pack(side='right', padx=4)
+        ttk.Button(actions, text='JSON 저장', command=save).pack(side='right', padx=4)
+        ttk.Button(actions, text='XLSX 출력', command=export).pack(side='right', padx=4)
+        replace([CostItem(category, title, parse_amount('0')) for category,title in DEFAULT_ITEMS])
+
     def open_integrated_cost_dialog(self):
         """D5: exclusive rough/detail choice for each work group, from exported XLSX."""
         from cost_integrated import GROUPS, read_cost_workbook, integrate_costs, export_integrated_cost
