@@ -70,4 +70,17 @@ def review_selection(candidate,code,catalog=None):
         raise ValueError('검증된 세부 단가를 선택해야 합니다.')
     if item['group']!=candidate.group or item['unit']!=candidate.unit:
         raise ValueError('공종 또는 단위가 일치하지 않습니다.')
+    # D3-G1: backend guard; GUI already filters these options.
+    # Validate the selected bridge item type even when called outside the GUI.
+    if candidate.group == '교량':
+        spec = str(item.get('spec', ''))
+        if candidate.item.endswith(' 교대'):
+            if not (code.startswith('BRIDGE_DETAIL_SUB_') and '/ 교대 /' in spec):
+                raise ValueError('교대 수량에는 교대 하부공 단가만 적용할 수 있습니다.')
+        elif candidate.item.endswith(' 교각'):
+            if not (code.startswith('BRIDGE_DETAIL_SUB_') and '/ 교각 /' in spec):
+                raise ValueError('교각 수량에는 교각 하부공 단가만 적용할 수 있습니다.')
+        elif candidate.item.endswith(' 상부공'):
+            if not code.startswith('BRIDGE_DETAIL_SUPER_'):
+                raise ValueError('교량 상부공 수량에는 상부공 단가만 적용할 수 있습니다.')
     return {'code':code,'quantity':candidate.quantity,'remark':candidate.source+' / '+candidate.warning+' / 사용자 확인'}
