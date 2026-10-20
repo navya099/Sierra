@@ -4,6 +4,7 @@ from pathlib import Path
 import math
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from quantity_structure import calculate_structure_quantities, export_quantities_xlsx
 from structure_engine import (StructureSettings, StructureSegment, detect_structures,
                               export_csv, load_manual_csv)
 from profile_calculator import read_ground_points
@@ -68,6 +69,7 @@ class StructureEditor(ttk.Frame):
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
+        ttk.Button(actions,text='기본 수량산출 XLSX...',command=self.export_basic_quantities).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -391,6 +393,19 @@ class StructureEditor(ttk.Frame):
         if self.segments and not messagebox.askyesno('후보 교체','기존 구조물 목록(수동 수정 포함)을 새 자동 판정 결과로 교체할까요?\n필요하면 먼저 CSV로 저장하세요.',parent=self): return
         self.segments=generated; self.dirty=True; self._refresh()
         self.log(f'구조물 자동 판정: {len(generated)}개 (현재 GUI 종곡선 설정 적용)')
+
+    def export_basic_quantities(self):
+        try:
+            if not self.segments:
+                raise ValueError('수량을 산출할 구조물 목록이 없습니다.')
+            rows=calculate_structure_quantities(self.segments,self.girder_settings())
+            path=filedialog.asksaveasfilename(parent=self,title='구조물 기본 수량산출서 저장',
+                defaultextension='.xlsx',filetypes=[('Excel 수량산출서','*.xlsx')])
+            if not path: return
+            export_quantities_xlsx(rows,path)
+            self.log(f'구조물 기본 수량산출서 저장: {path} (교량 {sum(r.kind=="BRIDGE" for r in rows)}개, 터널 {sum(r.kind=="TUNNEL" for r in rows)}개)')
+        except (ValueError,TypeError,OSError,ImportError) as exc:
+            messagebox.showerror('구조물 기본 수량산출',str(exc),parent=self)
 
     def _selected(self):
         sel=self.tree.selection()
