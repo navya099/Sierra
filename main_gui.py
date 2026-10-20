@@ -174,6 +174,30 @@ class AlignmentGUI:
         tabs.add(structure_frame, text='구조물 관리')
         self.structure_editor = StructureEditor(structure_frame, self._structure_context, self._log)
         self.structure_editor.pack(fill='both', expand=True)
+        # v12.7.2 UI-Q1: separate quantity actions from structure editing.
+        # Reuse the same StructureEditor instance to preserve shared data/state.
+        quantity_frame = ttk.Frame(tabs)
+        tabs.add(quantity_frame, text='수량 관리')
+        quantity_panel = ttk.LabelFrame(quantity_frame, text='개별 수량산출', padding=12)
+        quantity_panel.pack(fill='x', padx=12, pady=12)
+        quantity_actions = (
+            ('기본 구조물 수량 XLSX...', self.structure_editor.export_basic_quantities),
+            ('개략 토공량 및 설정...', self.structure_editor.open_earthwork_dialog),
+            ('터널 수량 XLSX...', self.structure_editor.export_tunnel_quantities),
+            ('교량 수량 XLSX...', self.structure_editor.export_bridge_quantities),
+        )
+        for idx, (title, callback) in enumerate(quantity_actions):
+            ttk.Button(quantity_panel, text=title, command=callback, width=28).grid(
+                row=idx // 2, column=idx % 2, padx=8, pady=8, sticky='ew')
+        ttk.Button(quantity_frame, text='통합 수량산출서 XLSX...',
+                   command=self.structure_editor.export_integrated_quantities,
+                   width=36).pack(anchor='w', padx=20, pady=(4, 8))
+        quantity_panel.columnconfigure(0, weight=1)
+        quantity_panel.columnconfigure(1, weight=1)
+        ttk.Label(quantity_frame,
+                  text='구조물 관리 탭의 교량·터널 설정과 구조물 목록을 공유합니다.\n'
+                       '통합 수량산출서도 이 탭에서 출력합니다.',
+                  justify='left').pack(anchor='w', padx=16, pady=5)
         self.vip_tree = self._make_tree(vip_frame, ['구분', 'STA', 'EL', '진입(‰)', '진출(‰)', '변화(‰)'])
         self.station_tree = self._make_tree(station_frame, ['STA', '지반고', '계획고', '표고차', '구배(‰)', '구분'])
         vc_controls = ttk.Frame(vc_frame)
