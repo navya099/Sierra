@@ -439,7 +439,7 @@ class StructureEditor(ttk.Frame):
         import json
         options=available_detail()
         lookup={x['code']:x for x in options}
-        win=tk.Toplevel(self);win.title('v12.7.3-D1 세부 공사비 산정 (수량 직접입력)');win.geometry('1030x610')
+        win=tk.Toplevel(self);win.title('v12.7.3-D2 세부 공사비 산정 (수량 연동/직접입력)');win.geometry('1030x650')
         ttk.Label(win,text='KDI 세부 단가 선택 → 수량·근거 입력 → 항목 추가. 단위는 단가 DB 기준이며 자동 수량 추정은 하지 않습니다.',padding=8).pack(anchor='w')
         ttk.Label(win,text='같은 공종의 개략 공사비와 합산 금지. 교량 상부공(m)·하부공(개소), 터널 패턴(m) 등은 실제 설계 조건 확인 필수.',padding=8).pack(anchor='w')
         frame=ttk.Frame(win,padding=8);frame.pack(fill='x')
@@ -485,7 +485,54 @@ class StructureEditor(ttk.Frame):
                 self.log(f'세부 공사비 산정서 저장: {path}')
                 messagebox.showinfo('세부 공사비',f'저장 완료: {len(rows)}개 항목\n산정분 합계만 표시됩니다.',parent=win)
             except (ValueError,TypeError,OSError,ImportError) as exc:messagebox.showerror('세부 공사비',str(exc),parent=win)
+        def import_integrated():
+            from quantity_detail_link import read_candidates,review_selection
+            from quantity_price import load_catalog
+            path=filedialog.askopenfilename(parent=win,title='v12.6.5 통합 수량산출서 선택',filetypes=[('Excel','*.xlsx')])
+            if not path:return
+            try:candidates=read_candidates(path)
+            except (ValueError,OSError,KeyError,ImportError) as exc:
+                messagebox.showerror('통합 수량 불러오기',str(exc),parent=win);return
+            if not candidates:
+                messagebox.showinfo('통합 수량 불러오기','연결 후보 수량이 없습니다.',parent=win);return
+            review=tk.Toplevel(win);review.title('통합 수량 → KDI 세부 단가 연결 검토');review.geometry('1120x610')
+            ttk.Label(review,text='수량은 자동 불러오지만 단가는 자동 확정하지 않습니다. 후보를 선택하고 실제 설계조건에 맞는 코드를 직접 선택하세요.',padding=8).pack(anchor='w')
+            ttk.Label(review,text='터널 NATM 패턴별 분할·교량 기초형식·토질은 통합 수량산출서에 없으므로 반드시 별도 검토하세요.',padding=8).pack(anchor='w')
+            cols=('공종','후보 수량','수량','단위','검토 사항')
+            cand_tree=ttk.Treeview(review,columns=cols,show='headings',height=13)
+            for c,w in zip(cols,(80,230,100,65,560)):
+                cand_tree.heading(c,text=c);cand_tree.column(c,width=w,anchor='w')
+            cand_tree.pack(fill='both',expand=True,padx=8,pady=8)
+            for i,c in enumerate(candidates):
+                cand_tree.insert('','end',iid=str(i),values=(c.group,c.item,f'{c.quantity:,.3f}',c.unit,c.warning))
+            row=ttk.Frame(review,padding=8);row.pack(fill='x')
+            ttk.Label(row,text='선택 후보에 적용할 세부 단가:').pack(side='left')
+            match_var=tk.StringVar();combo=ttk.Combobox(row,textvariable=match_var,width=80,state='readonly');combo.pack(side='left',padx=8,fill='x',expand=True)
+            def choose(_=None):
+                selected=cand_tree.selection()
+                if not selected:return
+                c=candidates[int(selected[0])]
+                compatible=[x for x in options if x['code'] in c.suggested_codes]
+                combo['values']=[f"{x['code']} | {x['name']} | {x['spec']} | {x['condition']} | {x['unit']}" for x in compatible]
+                match_var.set('')
+            cand_tree.bind('<<TreeviewSelect>>',choose)
+            def transfer():
+                try:
+                    selected=cand_tree.selection()
+                    if not selected:raise ValueError('수량 후보를 선택하세요.')
+                    c=candidates[int(selected[0])]
+                    code=match_var.get().split(' | ',1)[0]
+                    if not code:raise ValueError('세부 단가를 명시적으로 선택하세요.')
+                    if any(e['code']==code for e in entries):raise ValueError('동일 단가코드가 이미 있습니다. 중복을 피하려면 기존 항목을 삭제하거나 직접 합산하세요.')
+                    e=review_selection(c,code)
+                    if not messagebox.askyesno('단가 적용 확인',f'{c.item}\n수량: {c.quantity:g} {c.unit}\n선택 단가: {code}\n\n{c.warning}\n\n설계조건과 수량 적용범위를 확인했습니까?',parent=review):return
+                    entries.append(e);refresh()
+                    cand_tree.delete(selected[0]);match_var.set('')
+                except (ValueError,TypeError) as exc:messagebox.showerror('단가 연결',str(exc),parent=review)
+            ttk.Button(row,text='선택 후보를 세부 공사비에 추가...',command=transfer).pack(side='right')
         buttons=ttk.Frame(win,padding=8);buttons.pack(fill='x')
+        ttk.Button(buttons,text='통합 수량산출서 불러오기 / 단가 연결 검토...',command=import_integrated).pack(side='left',padx=5)
+
         ttk.Button(buttons,text='항목 추가',command=add).pack(side='left',padx=5)
         ttk.Button(buttons,text='선택 항목 삭제',command=remove).pack(side='left',padx=5)
         ttk.Button(buttons,text='세부 공사비 XLSX 산출...',command=export).pack(side='right',padx=5)
