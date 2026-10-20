@@ -790,7 +790,7 @@ class StructureEditor(ttk.Frame):
     def open_system_building_cost_dialog(self):
         """S1 isolated manual quantity/price ledger; P1 remains unchanged."""
         from system_building_cost import GROUPS,Item,number,amount,validate,summary,save_json,load_json,export_xlsx
-        win=tk.Toplevel(self);win.title('v12.8-S2.1 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
+        win=tk.Toplevel(self);win.title('v12.8-S2.1.1 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
         ttk.Label(win,text='신규 공종별 수량 × 사용자 입력 단가(원). 항목이 없는 공종은 미산정입니다. D5/P1과 별도 관리.',padding=9).pack(anchor='w')
         cols=('공종','항목명','수량','단위','단가(원)','금액(원)','산정 근거','비고')
         tree=ttk.Treeview(win,columns=cols,show='headings',height=12)
@@ -839,6 +839,7 @@ class StructureEditor(ttk.Frame):
             for k in tree.get_children():tree.delete(k)
             for i in items:tree.insert('', 'end',values=(i.group,i.name,str(i.quantity),i.unit,str(i.unit_price),str(amount(i)),i.basis,i.note))
             clear();refresh()
+        selected_kdi = {"row": None, "db": None}
         def choose_kdi_price():
             from pathlib import Path
             from system_kdi_link import load_eligible_catalog, provenance
@@ -872,13 +873,65 @@ class StructureEditor(ttk.Frame):
                 vars[3].set(r['unit'])
                 vars[4].set(str(r['source_price_krw']))
                 vars[5].set(provenance(r,Path(db).name))
+                selected_kdi['row'] = r
+                selected_kdi['db'] = str(db)
                 popup.destroy()
             ttk.Button(popup,text='선택 단가를 입력란에 적용',command=use_price).pack(pady=7)
+        def link_track_length():
+            from track_length_link import segment_lengths,quantity_for_price
+            from system_kdi_link import load_eligible_catalog
+            from pathlib import Path
+            try:
+                source,alignment=self.get_context()
+                if not source or alignment is None:
+                    raise ValueError('먼저 종단 DXF를 불러오고 선형 계산을 완료하세요.')
+                lengths=segment_lengths(alignment.vips,self.segments)
+            except (ValueError,TypeError,AttributeError) as exc:
+                messagebox.showerror('궤도연장 연동',str(exc),parent=win);return
+            popup=tk.Toplevel(win);popup.title('S2.1.1 궤도연장 자동 연동');popup.geometry('700x390');popup.transient(win)
+            popup.grab_set()
+            ttk.Label(popup,text='현재 선형/구조물 목록에서 연장을 계산합니다. 궤도 수와 구간은 직접 확인하세요.',padding=8).pack(anchor='w')
+            for g,v in lengths.items():
+                ttk.Label(popup,text=f'{g}: {v:,.3f}m',padding=2).pack(anchor='w',padx=12)
+            count=tk.StringVar(value='1');scope=tk.StringVar(value='전체')
+            line=ttk.Frame(popup,padding=8);line.pack(fill='x')
+            ttk.Label(line,text='선로 수').pack(side='left')
+            ttk.Combobox(line,textvariable=count,values=('1','2'),state='readonly',width=8).pack(side='left',padx=8)
+            ttk.Label(line,text='적용 구간').pack(side='left',padx=10)
+            ttk.Combobox(line,textvariable=scope,values=tuple(lengths),state='readonly',width=12).pack(side='left',padx=8)
+            ttk.Label(popup,text='먼저 S2.1 KDI 궤도 단가를 선택하세요. 현재 입력란의 단가코드를 근거에서 확인합니다.',padding=7,wraplength=650).pack(anchor='w')
+            def apply_length():
+                try:
+                    import re
+                    basis = vars[5].get()
+                    m = re.search(r'KDI 단가 DB 선택:\s*([A-Za-z0-9_]+)', basis)
+                    if not m:
+                        raise ValueError('먼저 [KDI 단가 선택]에서 궤도 단가를 선택하세요.')
+                    code = m.group(1)
+                    row = selected_kdi['row']
+                    if row is None or row['code'] != code:
+                        db = Path(__file__).with_name('kdi_general_rail_2019.json')
+                        entries = load_eligible_catalog(db)
+                        row = next((x for x in entries if x['code'] == code), None)
+                    if row is None:
+                        raise ValueError('선택한 단가 코드가 동봉 DB에 없습니다. 단가 DB를 확인하세요.')
+                    if vars[0].get()!=row['group'] or vars[3].get()!=row['unit'] or str(vars[4].get()).replace(',','')!=str(row['source_price_krw']):
+                        raise ValueError('입력란의 공종·단위·단가가 KDI 선택 항목과 다릅니다.')
+                    q=quantity_for_price(row,lengths,int(count.get()),scope.get())
+                    if q<=0:raise ValueError('선택 구간의 궤도연장이 0입니다.')
+                    vars[2].set(str(q))
+                    vars[5].set(vars[5].get()+f' | [S2.1.1 수량] {scope.get()} {lengths[scope.get()]}m × 선로수 {count.get()} / 단가단위 {row["unit"]} = {q}')
+                    popup.destroy()
+                    messagebox.showinfo('궤도연장 연동','수량을 입력란에 반영했습니다. [추가 / 선택 행 수정]을 눌러 확정하세요.',parent=win)
+                except (ValueError,TypeError,StopIteration) as exc:
+                    messagebox.showerror('궤도연장 연동',str(exc),parent=popup)
+            ttk.Button(popup,text='선택한 KDI 단가에 연장 수량 적용',command=apply_length).pack(pady=12)
         buttons=ttk.Frame(win,padding=7);buttons.pack(fill='x')
         ttk.Button(buttons,text='추가 / 선택 행 수정',command=apply).pack(side='left',padx=3)
         ttk.Button(buttons,text='선택 삭제',command=delete).pack(side='left',padx=3)
         ttk.Button(buttons,text='신규 항목',command=clear).pack(side='left',padx=3)
         ttk.Button(buttons,text='KDI 단가 선택 (S2.1)',command=choose_kdi_price).pack(side='left',padx=3)
+        ttk.Button(buttons,text='궤도연장 자동 연동 (S2.1.1)',command=link_track_length).pack(side='left',padx=3)
         ttk.Label(win,textvariable=status,padding=8,wraplength=1080).pack(anchor='w')
         def save():
             try:
