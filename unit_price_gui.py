@@ -5,7 +5,7 @@ from quantity_price import load_catalog,load_config,save_config,export_unit_pric
 
 def open_unit_price_editor(parent):
     catalog=load_catalog();config=load_config()
-    win=tk.Toplevel(parent);win.title('v12.7.1 KDI 단가 관리');win.geometry('1120x650')
+    win=tk.Toplevel(parent);win.title('v12.8-S2.2.1 통합 KDI 단가 관리');win.geometry('1120x650')
     top=ttk.Frame(win,padding=8);top.pack(fill='x')
     year=tk.StringVar(value=str(config['design_year']));factor=tk.StringVar(value=str(config.get('default_factor',1)))
     ttk.Label(top,text='설계 기준연도').pack(side='left');ttk.Entry(top,textvariable=year,width=8).pack(side='left',padx=5)
@@ -60,6 +60,17 @@ def open_unit_price_editor(parent):
             if p:export_unit_prices_xlsx(p,catalog,config);messagebox.showinfo('완료','단가산출서 저장 완료',parent=win)
         except (ValueError,OSError) as e:messagebox.showerror('산출 실패',str(e),parent=win)
     buttons=ttk.Frame(win,padding=8);buttons.pack(fill='x')
+    def browse_shared_catalogue():
+        from kdi_shared_picker import open_kdi_picker
+        def select_row(row, _db_name):
+            code=row['code']
+            if code not in lookup:
+                raise ValueError('현재 단가 관리자에 해당 코드가 없습니다.')
+            tree.selection_set(code)
+            tree.focus(code)
+            tree.see(code)
+        open_kdi_picker(win,select_row)
+    ttk.Button(buttons,text='통합 KDI 단가 찾기',command=browse_shared_catalogue).pack(side='left',padx=4)
     ttk.Button(buttons,text='선택 단가 수정',command=edit).pack(side='left',padx=4)
     ttk.Button(buttons,text='설정 JSON 저장',command=save).pack(side='left',padx=4)
     ttk.Button(buttons,text='단가산출서 XLSX...',command=export).pack(side='left',padx=4)

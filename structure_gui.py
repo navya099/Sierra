@@ -790,7 +790,7 @@ class StructureEditor(ttk.Frame):
     def open_system_building_cost_dialog(self):
         """S1 isolated manual quantity/price ledger; P1 remains unchanged."""
         from system_building_cost import GROUPS,Item,number,amount,validate,summary,save_json,load_json,export_xlsx
-        win=tk.Toplevel(self);win.title('v12.8-S2.2 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
+        win=tk.Toplevel(self);win.title('v12.8-S2.2.1 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
         ttk.Label(win,text='신규 공종별 수량 × 사용자 입력 단가(원). 항목이 없는 공종은 미산정입니다. D5/P1과 별도 관리.',padding=9).pack(anchor='w')
         cols=('공종','항목명','수량','단위','단가(원)','금액(원)','산정 근거','비고')
         tree=ttk.Treeview(win,columns=cols,show='headings',height=12)
@@ -841,62 +841,18 @@ class StructureEditor(ttk.Frame):
             clear();refresh()
         selected_kdi = {"row": None, "db": None}
         def choose_kdi_price():
-            from pathlib import Path
-            from system_kdi_link import load_eligible_catalog, provenance
-            default_db=Path(__file__).with_name('kdi_general_rail_2019.json')
-            db=filedialog.askopenfilename(parent=win,title='KDI 단가 DB JSON 선택',initialdir=str(default_db.parent),initialfile=default_db.name,filetypes=[('JSON','*.json')])
-            if not db:return
-            try:entries=load_eligible_catalog(db)
-            except (ValueError,OSError,KeyError,TypeError) as exc:
-                messagebox.showerror('KDI 단가 DB 검증 오류',str(exc),parent=win);return
-            if not entries:
-                messagebox.showinfo('적용 가능한 단가 없음',
-                    '선택한 KDI DB에는 신규 공종에 적용 가능한 단가가 없습니다.\n'
-                    'S2.2 단가 DB를 선택하거나 검증된 단가를 추가하세요.\n'
-                    '임의 단가는 생성하지 않습니다.',parent=win)
-                return
-            popup=tk.Toplevel(win);popup.title('S2.2 KDI 단가 선택');popup.geometry('1040x570');popup.transient(win)
-            ttk.Label(popup,text='출처·연도·단위 확인 후 적용. 수량 유지. 이후 [추가 / 선택 행 수정]으로 확정.',padding=8).pack(anchor='w')
-            filter_bar=ttk.Frame(popup,padding=6);filter_bar.pack(fill='x')
-            ttk.Label(filter_bar,text='공종 필터').pack(side='left')
-            group_filter=tk.StringVar(value='전체')
-            group_combo=ttk.Combobox(filter_bar,textvariable=group_filter,
-                                     values=['전체']+sorted({r['group'] for r in entries}),state='readonly',width=13)
-            group_combo.pack(side='left',padx=6)
-            ttk.Label(filter_bar,text='검색').pack(side='left',padx=(12,3))
-            search_filter=tk.StringVar()
-            ttk.Entry(filter_bar,textvariable=search_filter,width=35).pack(side='left')
-            headers=('공종','코드','항목명','규격','단위','단가(원)','기준연도','출처표')
-            t=ttk.Treeview(popup,columns=headers,show='headings')
-            for h,w in zip(headers,(85,120,165,120,65,110,85,110)):
-                t.heading(h,text=h);t.column(h,width=w)
-            table_frame=ttk.Frame(popup);table_frame.pack(fill='both',expand=True,padx=8,pady=8)
-            t.pack(side='left',fill='both',expand=True)
-            scroll=ttk.Scrollbar(table_frame,orient='vertical',command=t.yview)
-            scroll.pack(side='right',fill='y');t.configure(yscrollcommand=scroll.set)
-            def refresh_prices(*_):
-                t.delete(*t.get_children())
-                query=search_filter.get().strip().lower()
-                for idx,r in enumerate(entries):
-                    if group_filter.get()!='전체' and r['group']!=group_filter.get():continue
-                    if query and query not in ' '.join(str(r.get(k,'')) for k in ('code','name','spec','condition')).lower():continue
-                    t.insert('','end',iid=str(idx),values=(r['group'],r['code'],r['name'],r.get('spec',''),r['unit'],r['source_price_krw'],r['source_year'],r['source_table']))
-            group_combo.bind('<<ComboboxSelected>>',refresh_prices)
-            search_filter.trace_add('write',refresh_prices)
-            refresh_prices()
-            def use_price():
-                selection=t.selection()
-                if not selection:return
-                r=entries[int(selection[0])]
-                vars[0].set(r['group'])
-                vars[1].set(r['name']+((' - '+str(r.get('spec'))) if r.get('spec') else ''))
-                vars[3].set(r['unit'])
-                vars[4].set(str(r['source_price_krw']))
-                vars[5].set(provenance(r,Path(db).name))
-                selected_kdi['row'] = r
-                selected_kdi['db'] = str(db)
-                popup.destroy()
-            ttk.Button(popup,text='선택 단가를 입력란에 적용',command=use_price).pack(pady=7)
+            from kdi_shared_picker import open_kdi_picker
+            from system_kdi_link import provenance
+            from system_building_cost import GROUPS
+            def apply_kdi(row, db_name):
+                vars[0].set(row['group'])
+                vars[1].set(row['name'] + ((' - '+str(row.get('spec'))) if row.get('spec') else ''))
+                vars[3].set(row['unit'])
+                vars[4].set(str(row['source_price_krw']))
+                vars[5].set(provenance(row, db_name))
+                selected_kdi['row'] = row
+                selected_kdi['db'] = db_name
+            open_kdi_picker(win, apply_kdi, groups=GROUPS, initial_group=vars[0].get())
         def link_track_length():
             from track_length_link import segment_lengths,quantity_for_price
             from system_kdi_link import load_eligible_catalog
@@ -950,7 +906,7 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='추가 / 선택 행 수정',command=apply).pack(side='left',padx=3)
         ttk.Button(buttons,text='선택 삭제',command=delete).pack(side='left',padx=3)
         ttk.Button(buttons,text='신규 항목',command=clear).pack(side='left',padx=3)
-        ttk.Button(buttons,text='KDI 단가 선택 (S2.2)',command=choose_kdi_price).pack(side='left',padx=3)
+        ttk.Button(buttons,text='통합 KDI 단가 선택 (S2.2.1)',command=choose_kdi_price).pack(side='left',padx=3)
         ttk.Button(buttons,text='궤도연장 자동 연동 (S2.1.1)',command=link_track_length).pack(side='left',padx=3)
         ttk.Label(win,textvariable=status,padding=8,wraplength=1080).pack(anchor='w')
         def save():
