@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox, filedialog
 from quantity_structure import calculate_structure_quantities, export_quantities_xlsx
 from quantity_tunnel import calculate_tunnel_quantities, export_tunnel_xlsx
 from quantity_bridge import calculate_bridge_quantities, export_bridge_xlsx
+from quantity_integrated import export_integrated_xlsx
 from earthwork_simple import calculate_earthwork, export_earthwork_xlsx
 from structure_engine import (StructureSettings, StructureSegment, detect_structures,
                               export_csv, load_manual_csv)
@@ -77,6 +78,7 @@ class StructureEditor(ttk.Frame):
         ttk.Button(actions,text='개략 토공량...',command=self.open_earthwork_dialog).pack(side='left',padx=3)
         ttk.Button(actions,text='터널 수량 XLSX...',command=self.export_tunnel_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='교량 수량 XLSX...',command=self.export_bridge_quantities).pack(side='left',padx=3)
+        ttk.Button(actions,text='통합 수량산출서 XLSX...',command=self.export_integrated_quantities).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -430,6 +432,29 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('개략 토공량',str(exc),parent=win)
         ttk.Button(frame,text='XLSX 산출...',command=save).grid(row=4,column=0,pady=8)
         ttk.Button(frame,text='취소',command=win.destroy).grid(row=4,column=1,pady=8)
+
+    def export_integrated_quantities(self):
+        try:
+            source,alignment=self.get_context()
+            if not source or alignment is None:
+                raise ValueError('먼저 종단 DXF를 불러오고 계산을 완료하세요.')
+            width,cut,fill=(float(v.get()) for v in self.earthwork_vars)
+            earth=calculate_earthwork(read_ground_points(source),alignment,self.segments,width,cut,fill)
+            girder=self.girder_settings()
+            structures=calculate_structure_quantities(self.segments,girder)
+            bridge_section=self.plan_section_path.get().strip() or None
+            bridges=calculate_bridge_quantities(self.segments,girder,self.plan_pier_settings(),
+                self.pier_settings(),bridge_section) if any(x.kind=='BRIDGE' for x in self.segments) else []
+            tunnel_section=self.tunnel_section_path.get().strip() if self.tunnel_section_mode.get()=='dxf' else None
+            tunnels=calculate_tunnel_quantities(self.segments,tunnel_section) if tunnel_section and any(x.kind=='TUNNEL' for x in self.segments) else []
+            path=filedialog.asksaveasfilename(parent=self,title='통합 수량산출서 저장',
+                defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+            if not path:return
+            export_integrated_xlsx(path,earth,structures,bridges,tunnels,bridge_section,tunnel_section)
+            self.log(f'통합 수량산출서 저장: {path}')
+            messagebox.showinfo('통합 수량산출서','XLSX 저장 완료',parent=self)
+        except (ValueError,TypeError,OSError,ImportError) as exc:
+            messagebox.showerror('통합 수량산출서',str(exc),parent=self)
 
     def export_bridge_quantities(self):
         try:
