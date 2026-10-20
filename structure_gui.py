@@ -439,7 +439,7 @@ class StructureEditor(ttk.Frame):
         import json
         options=available_detail()
         lookup={x['code']:x for x in options}
-        win=tk.Toplevel(self);win.title('v12.7.3-D3 세부 공사비 산정 (일괄 연동/직접입력)');win.geometry('1030x650')
+        win=tk.Toplevel(self);win.title('v12.7.3-D4 세부 공사비 산정 (일괄 연동/NATM 분할)');win.geometry('1030x650')
         ttk.Label(win,text='KDI 세부 단가 선택 → 수량·근거 입력 → 항목 추가. 단위는 단가 DB 기준이며 자동 수량 추정은 하지 않습니다.',padding=8).pack(anchor='w')
         ttk.Label(win,text='같은 공종의 개략 공사비와 합산 금지. 교량 상부공(m)·하부공(개소), 터널 패턴(m) 등은 실제 설계 조건 확인 필수.',padding=8).pack(anchor='w')
         frame=ttk.Frame(win,padding=8);frame.pack(fill='x')
@@ -557,6 +557,51 @@ class StructureEditor(ttk.Frame):
                     for idx,_,_ in prepared:cand_tree.delete(idx)
                     match_var.set('')
                 except (ValueError,TypeError) as exc:messagebox.showerror('단가 연결',str(exc),parent=review)
+            def split_natm():
+                from natm_pattern import allocate_natm,pattern_codes
+                selected=cand_tree.selection()
+                if len(selected)!=1:
+                    messagebox.showerror('NATM 패턴 분할','터널 후보 1개만 선택하세요.',parent=review);return
+                idx=selected[0];c=candidates[int(idx)]
+                if c.group!='터널' or 'NATM 미분류 전체연장' not in c.item:
+                    messagebox.showerror('NATM 패턴 분할','NATM 미분류 전체연장 후보를 선택하세요.',parent=review);return
+                dialog=tk.Toplevel(review);dialog.title('NATM 패턴별 연장 배분 — '+c.item);dialog.geometry('760x455')
+                ttk.Label(dialog,text=f'{c.item} | 총연장 {c.quantity:,.3f} m',padding=8).pack(anchor='w')
+                ttk.Label(dialog,text='패턴별 실제 설계 연장(m)을 입력하세요. 0은 미적용이며 합계는 총연장과 일치해야 합니다.',padding=8).pack(anchor='w')
+                codes=pattern_codes();grid=ttk.Frame(dialog,padding=8);grid.pack(fill='x')
+                inputs=[]
+                for n in range(1,7):
+                    opts=[x for x in options if x['code'] in codes and x['code'].startswith(f'TUNNEL_DETAIL_MAIN_P{n}_')]
+                    ttk.Label(grid,text=f'패턴 {n}').grid(row=n-1,column=0,padx=6,pady=5)
+                    labels=[f"{x['code']} | {x['spec']}" for x in opts]
+                    code_v=tk.StringVar(value=labels[0] if labels else '')
+                    ttk.Combobox(grid,textvariable=code_v,values=labels,state='readonly',width=49).grid(row=n-1,column=1,padx=6)
+                    length_v=tk.StringVar(value='0')
+                    ttk.Entry(grid,textvariable=length_v,width=16).grid(row=n-1,column=2,padx=6)
+                    ttk.Label(grid,text='m').grid(row=n-1,column=3)
+                    inputs.append((code_v,length_v))
+                total_var=tk.StringVar(value='입력 합계: 0.000 m')
+                ttk.Label(dialog,textvariable=total_var,padding=8).pack(anchor='w')
+                def recalc(*_):
+                    try:
+                        q=sum(float(v.get() or '0') for _,v in inputs)
+                        total_var.set(f'입력 합계: {q:,.3f} m / 차이: {q-c.quantity:+,.3f} m')
+                    except ValueError:total_var.set('숫자가 아닌 연장이 있습니다.')
+                for _,v in inputs:v.trace_add('write',recalc)
+                def commit():
+                    try:
+                        allocations=[(cv.get().split(' | ',1)[0],lv.get()) for cv,lv in inputs]
+                        prepared=allocate_natm(c,allocations,path)
+                        existing={e.get('source_id') for e in entries if e.get('source_id')}
+                        if any(e['source_id'] in existing for e in prepared):
+                            raise ValueError('이 터널의 패턴 수량이 이미 등록되어 있습니다.')
+                        detail='\n'.join(f"{e['code']}: {e['quantity']:g}m" for e in prepared)
+                        if not messagebox.askyesno('NATM 패턴 분할 확정',
+                            f'{c.item} / 총연장 {c.quantity:g}m\n\n{detail}\n\n실제 설계 패턴 배분을 확인했습니까?',parent=dialog):return
+                        entries.extend(prepared);refresh();cand_tree.delete(idx);match_var.set('');dialog.destroy()
+                    except (ValueError,TypeError) as exc:messagebox.showerror('NATM 패턴 분할',str(exc),parent=dialog)
+                ttk.Button(dialog,text='합계 검증 후 산정 항목 추가...',command=commit).pack(pady=8)
+            ttk.Button(row,text='선택 터널 NATM 패턴 분할...',command=split_natm).pack(side='left',padx=5)
             ttk.Label(row,text='Ctrl/Shift 다중 선택 가능').pack(side='left',padx=5)
             ttk.Button(row,text='선택 후보 일괄 추가...',command=transfer).pack(side='right')
         buttons=ttk.Frame(win,padding=8);buttons.pack(fill='x')
