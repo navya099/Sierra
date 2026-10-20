@@ -790,7 +790,7 @@ class StructureEditor(ttk.Frame):
     def open_system_building_cost_dialog(self):
         """S1 isolated manual quantity/price ledger; P1 remains unchanged."""
         from system_building_cost import GROUPS,Item,number,amount,validate,summary,save_json,load_json,export_xlsx
-        win=tk.Toplevel(self);win.title('v12.8-S1 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
+        win=tk.Toplevel(self);win.title('v12.8-S2 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
         ttk.Label(win,text='신규 공종별 수량 × 사용자 입력 단가(원). 항목이 없는 공종은 미산정입니다. D5/P1과 별도 관리.',padding=9).pack(anchor='w')
         cols=('공종','항목명','수량','단위','단가(원)','금액(원)','산정 근거','비고')
         tree=ttk.Treeview(win,columns=cols,show='headings',height=12)
@@ -839,10 +839,46 @@ class StructureEditor(ttk.Frame):
             for k in tree.get_children():tree.delete(k)
             for i in items:tree.insert('', 'end',values=(i.group,i.name,str(i.quantity),i.unit,str(i.unit_price),str(amount(i)),i.basis,i.note))
             clear();refresh()
+        def choose_kdi_price():
+            from pathlib import Path
+            from system_kdi_link import load_eligible_catalog, provenance
+            default_db=Path(__file__).with_name('kdi_general_rail_2019.json')
+            db=filedialog.askopenfilename(parent=win,title='KDI 단가 DB JSON 선택',initialdir=str(default_db.parent),initialfile=default_db.name,filetypes=[('JSON','*.json')])
+            if not db:return
+            try:entries=load_eligible_catalog(db)
+            except (ValueError,OSError,KeyError,TypeError) as exc:
+                messagebox.showerror('KDI 단가 DB 검증 오류',str(exc),parent=win);return
+            if not entries:
+                messagebox.showinfo('적용 가능한 단가 없음',
+                    '기존 KDI DB에는 토공·교량·터널 단가만 있습니다.\n'
+                    '궤도·전력·전차선·신호·통신·건축·기계설비는 단가 자료 추가 확보가 필요합니다.\n'
+                    '임의 단가는 생성하지 않습니다.',parent=win)
+                return
+            popup=tk.Toplevel(win);popup.title('S2 KDI 단가 선택');popup.geometry('990x490');popup.transient(win)
+            ttk.Label(popup,text='출처·연도·단위 확인 후 적용. 수량 유지. 이후 [추가 / 선택 행 수정]으로 확정.',padding=8).pack(anchor='w')
+            headers=('공종','코드','항목명','규격','단위','단가(원)','기준연도','출처표')
+            t=ttk.Treeview(popup,columns=headers,show='headings')
+            for h,w in zip(headers,(85,120,165,120,65,110,85,110)):
+                t.heading(h,text=h);t.column(h,width=w)
+            t.pack(fill='both',expand=True,padx=8,pady=8)
+            for idx,r in enumerate(entries):
+                t.insert('','end',iid=str(idx),values=(r['group'],r['code'],r['name'],r.get('spec',''),r['unit'],r['source_price_krw'],r['source_year'],r['source_table']))
+            def use_price():
+                selection=t.selection()
+                if not selection:return
+                r=entries[int(selection[0])]
+                vars[0].set(r['group'])
+                vars[1].set(r['name']+((' - '+str(r.get('spec'))) if r.get('spec') else ''))
+                vars[3].set(r['unit'])
+                vars[4].set(str(r['source_price_krw']))
+                vars[5].set(provenance(r,Path(db).name))
+                popup.destroy()
+            ttk.Button(popup,text='선택 단가를 입력란에 적용',command=use_price).pack(pady=7)
         buttons=ttk.Frame(win,padding=7);buttons.pack(fill='x')
         ttk.Button(buttons,text='추가 / 선택 행 수정',command=apply).pack(side='left',padx=3)
         ttk.Button(buttons,text='선택 삭제',command=delete).pack(side='left',padx=3)
         ttk.Button(buttons,text='신규 항목',command=clear).pack(side='left',padx=3)
+        ttk.Button(buttons,text='KDI 단가 선택 (S2)',command=choose_kdi_price).pack(side='left',padx=3)
         ttk.Label(win,textvariable=status,padding=8,wraplength=1080).pack(anchor='w')
         def save():
             try:
