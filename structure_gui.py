@@ -5,6 +5,7 @@ import math
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from quantity_structure import calculate_structure_quantities, export_quantities_xlsx
+from quantity_tunnel import calculate_tunnel_quantities, export_tunnel_xlsx
 from earthwork_simple import calculate_earthwork, export_earthwork_xlsx
 from structure_engine import (StructureSettings, StructureSegment, detect_structures,
                               export_csv, load_manual_csv)
@@ -73,6 +74,7 @@ class StructureEditor(ttk.Frame):
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
         ttk.Button(actions,text='기본 수량산출 XLSX...',command=self.export_basic_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='개략 토공량...',command=self.open_earthwork_dialog).pack(side='left',padx=3)
+        ttk.Button(actions,text='터널 수량 XLSX...',command=self.export_tunnel_quantities).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -426,6 +428,23 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('개략 토공량',str(exc),parent=win)
         ttk.Button(frame,text='XLSX 산출...',command=save).grid(row=4,column=0,pady=8)
         ttk.Button(frame,text='취소',command=win.destroy).grid(row=4,column=1,pady=8)
+
+    def export_tunnel_quantities(self):
+        try:
+            if not any(s.kind=='TUNNEL' for s in self.segments):
+                raise ValueError('현재 구조물 목록에 터널이 없습니다.')
+            if self.tunnel_section_mode.get()!='dxf':
+                raise ValueError('터널 설정에서 사용자 단면 DXF를 선택하세요. 기본 사각 단면은 폭이 정의되지 않아 수량산출에서 제외합니다.')
+            section_path=self.tunnel_section_path.get().strip()
+            rows=calculate_tunnel_quantities(self.segments,section_path)
+            path=filedialog.asksaveasfilename(parent=self,title='터널 수량산출서 저장',
+                defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+            if not path:return
+            export_tunnel_xlsx(rows,path,section_path)
+            self.log(f'터널 수량산출: {len(rows)}개, 굴착 {sum(r.excavation_m3 for r in rows):,.3f}m³, 라이닝 {sum(r.lining_m3 for r in rows):,.3f}m³ → {path}')
+            messagebox.showinfo('터널 수량산출','XLSX 수량산출서 저장 완료',parent=self)
+        except (ValueError,TypeError,OSError,ImportError) as exc:
+            messagebox.showerror('터널 수량산출',str(exc),parent=self)
 
     def export_basic_quantities(self):
         try:
