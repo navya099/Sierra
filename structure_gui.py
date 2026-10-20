@@ -787,6 +787,87 @@ class StructureEditor(ttk.Frame):
         ttk.Button(actions, text='XLSX 출력', command=export).pack(side='right', padx=4)
         replace([CostItem(category, title, parse_amount('0')) for category,title in DEFAULT_ITEMS])
 
+    def open_system_building_cost_dialog(self):
+        """S1 isolated manual quantity/price ledger; P1 remains unchanged."""
+        from system_building_cost import GROUPS,Item,number,amount,validate,summary,save_json,load_json,export_xlsx
+        win=tk.Toplevel(self);win.title('v12.8-S1 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
+        ttk.Label(win,text='신규 공종별 수량 × 사용자 입력 단가(원). 항목이 없는 공종은 미산정입니다. D5/P1과 별도 관리.',padding=9).pack(anchor='w')
+        cols=('공종','항목명','수량','단위','단가(원)','금액(원)','산정 근거','비고')
+        tree=ttk.Treeview(win,columns=cols,show='headings',height=12)
+        for c,w in zip(cols,(90,150,95,65,120,130,230,160)):
+            tree.heading(c,text=c);tree.column(c,width=w,anchor='e' if c in ('수량','단가(원)','금액(원)') else 'w')
+        tree.pack(fill='both',expand=True,padx=8,pady=5)
+        frame=ttk.LabelFrame(win,text='항목 추가 / 선택 행 수정',padding=8);frame.pack(fill='x',padx=8)
+        vars=[tk.StringVar(value=v) for v in (GROUPS[0],'','1','식','0','','')]
+        labels=('공종','항목명','수량','단위','단가(원)','산정 근거','비고')
+        for j,(label,var) in enumerate(zip(labels,vars)):
+            ttk.Label(frame,text=label).grid(row=0,column=j,sticky='w')
+            if j==0:widget=ttk.Combobox(frame,textvariable=var,values=GROUPS,state='readonly',width=12)
+            else:widget=ttk.Entry(frame,textvariable=var,width=30 if j==5 else 15)
+            widget.grid(row=1,column=j,padx=3,sticky='ew');frame.columnconfigure(j,weight=2 if j==5 else 1)
+        selected=[None]
+        def pick(_=None):
+            ids=tree.selection()
+            if not ids:return
+            selected[0]=ids[0];v=tree.item(ids[0],'values')
+            for var,value in zip(vars,(v[0],v[1],v[2],v[3],v[4],v[6],v[7])):var.set(value)
+        tree.bind('<<TreeviewSelect>>',pick)
+        def read_all():
+            return validate([Item(v[0],v[1],number(v[2],'수량'),v[3],number(v[4],'단가'),v[6],v[7]) for v in (tree.item(k,'values') for k in tree.get_children())])
+        status=tk.StringVar()
+        def refresh():
+            try:
+                totals=summary(read_all());parts=[f'{g}: '+(f'{int(v):,}원' if v is not None else '미산정') for g,v in totals.items()]
+                status.set('  |  '.join(parts)+f'  |  산정분 합계: {int(sum((v for v in totals.values() if v is not None),0)):,}원')
+            except ValueError as exc:status.set(str(exc))
+        def clear():
+            selected[0]=None;tree.selection_remove(tree.selection())
+            for var,value in zip(vars,(GROUPS[0],'','1','식','0','','')):var.set(value)
+        def apply():
+            try:
+                i=Item(vars[0].get(),vars[1].get(),number(vars[2].get(),'수량'),vars[3].get(),number(vars[4].get(),'단가'),vars[5].get(),vars[6].get())
+                others=[Item(v[0],v[1],number(v[2],'수량'),v[3],number(v[4],'단가'),v[6],v[7]) for k in tree.get_children() if k!=selected[0] for v in [tree.item(k,'values')]]
+                validate(others+[i]);values=(i.group,i.name,str(i.quantity),i.unit,str(i.unit_price),str(amount(i)),i.basis,i.note)
+                if selected[0] and tree.exists(selected[0]):tree.item(selected[0],values=values)
+                else:tree.insert('', 'end',values=values)
+                clear();refresh()
+            except (ValueError,TypeError) as exc:messagebox.showerror('입력 오류',str(exc),parent=win)
+        def delete():
+            for k in tree.selection():tree.delete(k)
+            clear();refresh()
+        def replace(items):
+            for k in tree.get_children():tree.delete(k)
+            for i in items:tree.insert('', 'end',values=(i.group,i.name,str(i.quantity),i.unit,str(i.unit_price),str(amount(i)),i.basis,i.note))
+            clear();refresh()
+        buttons=ttk.Frame(win,padding=7);buttons.pack(fill='x')
+        ttk.Button(buttons,text='추가 / 선택 행 수정',command=apply).pack(side='left',padx=3)
+        ttk.Button(buttons,text='선택 삭제',command=delete).pack(side='left',padx=3)
+        ttk.Button(buttons,text='신규 항목',command=clear).pack(side='left',padx=3)
+        ttk.Label(win,textvariable=status,padding=8,wraplength=1080).pack(anchor='w')
+        def save():
+            try:
+                items=read_all()
+                if not items:raise ValueError('저장할 항목이 없습니다.')
+                path=filedialog.asksaveasfilename(parent=win,defaultextension='.json',filetypes=[('JSON','*.json')])
+                if path:save_json(path,items);messagebox.showinfo('완료','JSON 저장 완료',parent=win)
+            except (ValueError,OSError) as exc:messagebox.showerror('저장 오류',str(exc),parent=win)
+        def load():
+            path=filedialog.askopenfilename(parent=win,filetypes=[('JSON','*.json')])
+            if not path:return
+            try:replace(load_json(path))
+            except (ValueError,KeyError,TypeError,OSError) as exc:messagebox.showerror('불러오기 오류',str(exc),parent=win)
+        def export():
+            try:
+                items=read_all()
+                if not items:raise ValueError('출력할 항목이 없습니다.')
+                path=filedialog.asksaveasfilename(parent=win,defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+                if path:export_xlsx(path,items);self.log(f'시스템·건축 공사비 XLSX: {path}');messagebox.showinfo('완료','S1 공사비 XLSX 출력 완료',parent=win)
+            except (ValueError,OSError,ImportError) as exc:messagebox.showerror('출력 오류',str(exc),parent=win)
+        ttk.Button(buttons,text='JSON 불러오기',command=load).pack(side='right',padx=3)
+        ttk.Button(buttons,text='JSON 저장',command=save).pack(side='right',padx=3)
+        ttk.Button(buttons,text='XLSX 출력',command=export).pack(side='right',padx=3)
+        refresh()
+
     def open_project_cost_dialog(self):
         """P1: combine two independently exported snapshots, never change D5/T2."""
         from project_cost import aggregate, export_project_cost
