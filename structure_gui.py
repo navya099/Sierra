@@ -80,6 +80,7 @@ class StructureEditor(ttk.Frame):
         ttk.Button(actions,text='교량 수량 XLSX...',command=self.export_bridge_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='통합 수량산출서 XLSX...',command=self.export_integrated_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='KDI 단가 관리...',command=self.open_unit_price_manager).pack(side='left',padx=3)
+        ttk.Button(actions,text='개략 공사비 XLSX...',command=self.open_cost_estimate_dialog).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -437,6 +438,43 @@ class StructureEditor(ttk.Frame):
     def open_unit_price_manager(self):
         from unit_price_gui import open_unit_price_editor
         open_unit_price_editor(self)
+
+    def open_cost_estimate_dialog(self):
+        from cost_estimate import available_rough, estimate_rough, export_cost_xlsx
+        from quantity_price import load_config
+        opts=available_rough()
+        win=tk.Toplevel(self);win.title('v12.7.2 개략 공사비 산정');win.geometry('820x290')
+        ttk.Label(win,text='공종별 KDI 개략 단가를 직접 선택하세요. 미선택 공종은 미산정으로 표시합니다.',padding=8).pack(anchor='w')
+        ttk.Label(win,text='선택 조건(단복선/지역/기초)은 자동 판정하지 않습니다. 세부 단가와 중복 계산하지 않습니다.',padding=8).pack(anchor='w')
+        vars={};lookup={}
+        for group in ('토공','교량','터널'):
+            row=ttk.Frame(win,padding=5);row.pack(fill='x')
+            ttk.Label(row,text=group,width=8).pack(side='left')
+            names=['미선택 (미산정)']
+            for item in opts[group]:
+                label=f"{item['code']} | {item['spec']} | {item['condition']}"
+                names.append(label);lookup[label]=item['code']
+            v=tk.StringVar(value=names[0]);vars[group]=v
+            ttk.Combobox(row,textvariable=v,values=names,state='readonly',width=92).pack(side='left',fill='x',expand=True)
+        def run():
+            try:
+                source,alignment=self.get_context()
+                if not source or alignment is None:raise ValueError('먼저 종단 DXF를 불러오고 계산을 완료하세요.')
+                width,cut,fill=(float(v.get()) for v in self.earthwork_vars)
+                earth=calculate_earthwork(read_ground_points(source),alignment,self.segments,width,cut,fill)
+                selections={g:lookup.get(v.get(),'') for g,v in vars.items()}
+                config=load_config()
+                rows,review,lengths=estimate_rough(earth,self.segments,selections,config=config)
+                if not rows:raise ValueError('산정 가능한 단가를 최소 1개 선택하세요.')
+                path=filedialog.asksaveasfilename(parent=win,title='개략 공사비 산정서 저장',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+                if not path:return
+                export_cost_xlsx(path,rows,review,lengths,config)
+                self.log(f'개략 공사비 산정서 저장: {path}')
+                messagebox.showinfo('개략 공사비',f'저장 완료\n미산정 공종 {len(review)}건 (검토 시트 확인)',parent=win)
+                win.destroy()
+            except (ValueError,TypeError,OSError,ImportError) as exc:
+                messagebox.showerror('개략 공사비',str(exc),parent=win)
+        ttk.Button(win,text='공사비 XLSX 산출...',command=run).pack(pady=12)
 
     def export_integrated_quantities(self):
         try:
