@@ -432,6 +432,64 @@ class StructureEditor(ttk.Frame):
         from unit_price_gui import open_unit_price_editor
         open_unit_price_editor(self)
 
+    def open_detail_cost_dialog(self):
+        """Manual, auditable quantity input; v12.6.5 quantity engines remain untouched."""
+        from cost_detail import available_detail,estimate_detail,export_detail_xlsx
+        from quantity_price import load_config
+        import json
+        options=available_detail()
+        lookup={x['code']:x for x in options}
+        win=tk.Toplevel(self);win.title('v12.7.3-D1 세부 공사비 산정 (수량 직접입력)');win.geometry('1030x610')
+        ttk.Label(win,text='KDI 세부 단가 선택 → 수량·근거 입력 → 항목 추가. 단위는 단가 DB 기준이며 자동 수량 추정은 하지 않습니다.',padding=8).pack(anchor='w')
+        ttk.Label(win,text='같은 공종의 개략 공사비와 합산 금지. 교량 상부공(m)·하부공(개소), 터널 패턴(m) 등은 실제 설계 조건 확인 필수.',padding=8).pack(anchor='w')
+        frame=ttk.Frame(win,padding=8);frame.pack(fill='x')
+        values=[f"{x['code']} | {x['group']} | {x['name']} | {x['spec']} | {x['unit']}" for x in options]
+        code_var=tk.StringVar(value=values[0] if values else '')
+        ttk.Combobox(frame,textvariable=code_var,values=values,state='readonly',width=78).grid(row=0,column=0,columnspan=4,sticky='ew',pady=4)
+        q_var=tk.StringVar();remark_var=tk.StringVar()
+        ttk.Label(frame,text='수량').grid(row=1,column=0,sticky='e');ttk.Entry(frame,textvariable=q_var,width=17).grid(row=1,column=1,sticky='w')
+        ttk.Label(frame,text='수량 근거').grid(row=1,column=2,sticky='e');ttk.Entry(frame,textvariable=remark_var,width=47).grid(row=1,column=3,sticky='ew')
+        frame.columnconfigure(3,weight=1)
+        columns=('코드','공종','수량','단위','수량 근거')
+        tree=ttk.Treeview(win,columns=columns,show='headings',height=15)
+        for col,width in zip(columns,(170,90,120,100,460)):
+            tree.heading(col,text=col);tree.column(col,width=width,anchor='w')
+        tree.pack(fill='both',expand=True,padx=10,pady=8)
+        entries=[]
+        def refresh():
+            for iid in tree.get_children():tree.delete(iid)
+            for i,e in enumerate(entries):
+                item=lookup[e['code']]
+                tree.insert('', 'end',iid=str(i),values=(e['code'],item['group'],e['quantity'],item['unit'],e['remark']))
+        def add():
+            try:
+                code=code_var.get().split(' | ',1)[0]
+                if code not in lookup:raise ValueError('세부 단가를 선택하세요.')
+                q=float(q_var.get())
+                if not math.isfinite(q) or q<=0:raise ValueError('수량은 0보다 큰 유한수여야 합니다.')
+                if any(e['code']==code for e in entries):raise ValueError('동일 단가코드가 이미 있습니다. 기존 항목 삭제 후 합산 수량을 입력하세요.')
+                entries.append({'code':code,'quantity':q,'remark':remark_var.get()})
+                refresh();q_var.set('');remark_var.set('')
+            except ValueError as exc:messagebox.showerror('수량 입력',str(exc),parent=win)
+        def remove():
+            ids=tree.selection()
+            if ids:
+                entries.pop(int(ids[0]));refresh()
+        def export():
+            try:
+                if not entries:raise ValueError('산정할 세부 항목을 추가하세요.')
+                config=load_config();rows=estimate_detail(entries,config=config)
+                path=filedialog.asksaveasfilename(parent=win,title='세부 공사비 산정서 저장',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+                if not path:return
+                export_detail_xlsx(path,rows,config)
+                self.log(f'세부 공사비 산정서 저장: {path}')
+                messagebox.showinfo('세부 공사비',f'저장 완료: {len(rows)}개 항목\n산정분 합계만 표시됩니다.',parent=win)
+            except (ValueError,TypeError,OSError,ImportError) as exc:messagebox.showerror('세부 공사비',str(exc),parent=win)
+        buttons=ttk.Frame(win,padding=8);buttons.pack(fill='x')
+        ttk.Button(buttons,text='항목 추가',command=add).pack(side='left',padx=5)
+        ttk.Button(buttons,text='선택 항목 삭제',command=remove).pack(side='left',padx=5)
+        ttk.Button(buttons,text='세부 공사비 XLSX 산출...',command=export).pack(side='right',padx=5)
+
     def open_cost_estimate_dialog(self):
         from cost_estimate import available_rough, estimate_rough, export_cost_xlsx
         from quantity_price import load_config
