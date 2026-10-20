@@ -467,7 +467,6 @@ class StructureEditor(ttk.Frame):
                 if code not in lookup:raise ValueError('세부 단가를 선택하세요.')
                 q=float(q_var.get())
                 if not math.isfinite(q) or q<=0:raise ValueError('수량은 0보다 큰 유한수여야 합니다.')
-                if any(e['code']==code for e in entries):raise ValueError('동일 단가코드가 이미 있습니다. 기존 항목 삭제 후 합산 수량을 입력하세요.')
                 entries.append({'code':code,'quantity':q,'remark':remark_var.get()})
                 refresh();q_var.set('');remark_var.set('')
             except ValueError as exc:messagebox.showerror('수량 입력',str(exc),parent=win)
@@ -523,8 +522,10 @@ class StructureEditor(ttk.Frame):
                     c=candidates[int(selected[0])]
                     code=match_var.get().split(' | ',1)[0]
                     if not code:raise ValueError('세부 단가를 명시적으로 선택하세요.')
-                    if any(e['code']==code for e in entries):raise ValueError('동일 단가코드가 이미 있습니다. 중복을 피하려면 기존 항목을 삭제하거나 직접 합산하세요.')
                     e=review_selection(c,code)
+                    e['source_id']=str(path)+'::'+c.source
+                    if any(old.get('source_id')==e['source_id'] for old in entries):
+                        raise ValueError('이미 추가한 수량 후보입니다. 기존 항목을 삭제한 후 다시 연결하세요.')
                     if not messagebox.askyesno('단가 적용 확인',f'{c.item}\n수량: {c.quantity:g} {c.unit}\n선택 단가: {code}\n\n{c.warning}\n\n설계조건과 수량 적용범위를 확인했습니까?',parent=review):return
                     entries.append(e);refresh()
                     cand_tree.delete(selected[0]);match_var.set('')

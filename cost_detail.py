@@ -22,16 +22,18 @@ def available_detail(catalog=None):
 def estimate_detail(entries,catalog=None,config=None,rough_groups=()):
     """entries: [{code,quantity,remark}]. Missing quantities are not zero.
 
-    No rough/detail combination within the same work group; no duplicate price code.
+    No rough/detail combination within the same work group. Reuse price codes across different source quantities.
     """
     catalog=catalog or load_catalog();config=config or load_config()
     lookup={x['code']:x for x in available_detail(catalog)}
-    rows=[];seen=set();used={g:'ROUGH' for g in rough_groups}
+    rows=[];seen_sources=set();used={g:'ROUGH' for g in rough_groups}
     for n,entry in enumerate(entries,1):
         code=str(entry.get('code','')).strip()
         if not code:raise ValueError(f'{n}행: 단가코드 누락')
-        if code in seen:raise ValueError(f'{code}: 동일 세부 단가코드 중복 입력 (수량을 합산하세요)')
-        seen.add(code)
+        source_id=str(entry.get('source_id') or '').strip()
+        if source_id:
+            if source_id in seen_sources:raise ValueError(f'{source_id}: 동일 수량 후보가 중복 등록되었습니다.')
+            seen_sources.add(source_id)
         item=lookup.get(code)
         if item is None:raise ValueError(f'{code}: 검증된 세부 단가가 아닙니다.')
         q=float(entry['quantity'])
