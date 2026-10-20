@@ -5,6 +5,7 @@ import math
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from quantity_structure import calculate_structure_quantities, export_quantities_xlsx
+from earthwork_simple import calculate_earthwork, export_earthwork_xlsx
 from structure_engine import (StructureSettings, StructureSegment, detect_structures,
                               export_csv, load_manual_csv)
 from profile_calculator import read_ground_points
@@ -27,6 +28,7 @@ class StructureEditor(ttk.Frame):
         self.log = log
         self.segments = []
         self.dirty = False
+        self.earthwork_vars=[tk.StringVar(value=v) for v in ("10.0","1.5","1.5")]
         self.settings_vars = [tk.StringVar(value=x) for x in ('40','100','15','100','5')]
         settings = ttk.LabelFrame(self, text='자동 판정 기준 (m)', padding=7)
         settings.pack(fill='x', padx=5, pady=4)
@@ -70,6 +72,7 @@ class StructureEditor(ttk.Frame):
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
         ttk.Button(actions,text='기본 수량산출 XLSX...',command=self.export_basic_quantities).pack(side='left',padx=3)
+        ttk.Button(actions,text='개략 토공량...',command=self.open_earthwork_dialog).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -393,6 +396,36 @@ class StructureEditor(ttk.Frame):
         if self.segments and not messagebox.askyesno('후보 교체','기존 구조물 목록(수동 수정 포함)을 새 자동 판정 결과로 교체할까요?\n필요하면 먼저 CSV로 저장하세요.',parent=self): return
         self.segments=generated; self.dirty=True; self._refresh()
         self.log(f'구조물 자동 판정: {len(generated)}개 (현재 GUI 종곡선 설정 적용)')
+
+    def open_earthwork_dialog(self):
+        win=tk.Toplevel(self)
+        win.title('v12.6.2 개략 토공량 — 수평 지반 가정')
+        win.transient(self.winfo_toplevel())
+        win.resizable(False,False)
+        frame=ttk.Frame(win,padding=12);frame.pack(fill='both',expand=True)
+        for i,(label,var) in enumerate(zip(('노반 폭 B (m)','절토 사면 (1:m)','성토 사면 (1:m)'),self.earthwork_vars)):
+            ttk.Label(frame,text=label).grid(row=i,column=0,sticky='w',padx=5,pady=5)
+            ttk.Entry(frame,textvariable=var,width=14).grid(row=i,column=1,padx=5,pady=5)
+        ttk.Label(frame,text='지반은 횡방향 수평 가정 / 25m 기본 측점 / 구조물 구간 제외').grid(row=3,column=0,columnspan=2,pady=8)
+        def save():
+            try:
+                width,cut,fill=(float(v.get()) for v in self.earthwork_vars)
+                source,alignment=self.get_context()
+                if not source or alignment is None:raise ValueError('먼저 종단 DXF를 불러오고 계산을 완료하세요.')
+                result=calculate_earthwork(read_ground_points(source),alignment,self.segments,
+                                           width,cut,fill)
+                path=filedialog.asksaveasfilename(parent=win,title='개략 토공량 XLSX 저장',
+                        defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+                if not path:return
+                export_earthwork_xlsx(result,path)
+                self.log(f'개략 토공량: 절토 {result.cut_m3:,.2f}m³, 성토 {result.fill_m3:,.2f}m³, 구조물 제외 {result.excluded_length_m:,.2f}m → {path}')
+                messagebox.showinfo('개략 토공량','XLSX 수량산출서 저장 완료\n'
+                    f'절토 {result.cut_m3:,.2f}m³ / 성토 {result.fill_m3:,.2f}m³',parent=win)
+                win.destroy()
+            except (ValueError,TypeError,OSError,ImportError) as exc:
+                messagebox.showerror('개략 토공량',str(exc),parent=win)
+        ttk.Button(frame,text='XLSX 산출...',command=save).grid(row=4,column=0,pady=8)
+        ttk.Button(frame,text='취소',command=win.destroy).grid(row=4,column=1,pady=8)
 
     def export_basic_quantities(self):
         try:
