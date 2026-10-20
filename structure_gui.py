@@ -74,8 +74,6 @@ class StructureEditor(ttk.Frame):
         actions=ttk.Frame(self); actions.pack(fill='x',padx=5,pady=4)
         for title,fn in [('자동 후보 생성',self.auto_generate),('추가',self.add),('수정',self.edit),('삭제',self.delete),('CSV 저장',self.save_csv),('CSV 불러오기',self.load_csv)]:
             ttk.Button(actions,text=title,command=fn).pack(side='left',padx=3)
-        ttk.Button(actions,text='KDI 단가 관리...',command=self.open_unit_price_manager).pack(side='left',padx=3)
-        ttk.Button(actions,text='개략 공사비 XLSX...',command=self.open_cost_estimate_dialog).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)

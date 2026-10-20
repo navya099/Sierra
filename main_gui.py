@@ -198,6 +198,23 @@ class AlignmentGUI:
                   text='구조물 관리 탭의 교량·터널 설정과 구조물 목록을 공유합니다.\n'
                        '통합 수량산출서도 이 탭에서 출력합니다.',
                   justify='left').pack(anchor='w', padx=16, pady=5)
+        # v12.7.2 UI-C1: cost management UI; share StructureEditor state.
+        cost_frame = ttk.Frame(tabs)
+        tabs.add(cost_frame, text='공사비 관리')
+        cost_panel = ttk.LabelFrame(cost_frame, text='단가 및 공사비 산정', padding=12)
+        cost_panel.pack(fill='x', padx=12, pady=12)
+        ttk.Button(cost_panel, text='KDI 단가 관리...',
+                   command=self.structure_editor.open_unit_price_manager,
+                   width=30).grid(row=0, column=0, padx=8, pady=8, sticky='ew')
+        ttk.Button(cost_panel, text='개략 공사비 XLSX...',
+                   command=self.structure_editor.open_cost_estimate_dialog,
+                   width=30).grid(row=0, column=1, padx=8, pady=8, sticky='ew')
+        cost_panel.columnconfigure(0, weight=1)
+        cost_panel.columnconfigure(1, weight=1)
+        ttk.Label(cost_frame,
+                  text='KDI 기준단가와 사용자 설정을 관리하고, 구조물 목록을 이용해 개략 공사비를 산정합니다.\n'
+                       '총사업비 출력 기능은 향후 이 탭의 별도 출력 영역에 추가할 예정입니다.',
+                  justify='left').pack(anchor='w', padx=16, pady=5)
         self.vip_tree = self._make_tree(vip_frame, ['구분', 'STA', 'EL', '진입(‰)', '진출(‰)', '변화(‰)'])
         self.station_tree = self._make_tree(station_frame, ['STA', '지반고', '계획고', '표고차', '구배(‰)', '구분'])
         vc_controls = ttk.Frame(vc_frame)
