@@ -618,7 +618,7 @@ class StructureEditor(ttk.Frame):
             validate, summarize, save_json, load_json, export_xlsx
         )
         win = tk.Toplevel(self)
-        win.title('v12.7.4-T1 공사비 외 비용 산정')
+        win.title('v12.7.4-T2 공사비 외 비용 산정')
         win.geometry('1020x610')
         win.transient(self.winfo_toplevel())
         ttk.Label(win, text='공사비 외 비용 직접 입력 (원). D5 공사비와 합산하지 않습니다.',
@@ -697,6 +697,52 @@ class StructureEditor(ttk.Frame):
             name.set(''); amount.set('0'); basis.set(''); note.set('')
         actions = ttk.Frame(win, padding=6)
         actions.pack(fill='x')
+        def auto_calculate():
+            """Write the calculation into the existing T1 editor, without saving until Apply."""
+            from nonconstruction_auto import calculate, calculation_basis
+            dialog=tk.Toplevel(win)
+            dialog.title('T2 요율 자동 산정')
+            dialog.geometry('650x360')
+            dialog.transient(win)
+            dialog.grab_set()
+            ttk.Label(dialog,text='입력한 기준금액과 요율로 계산합니다. 공식 요율은 제공하지 않습니다.',
+                      padding=8).pack(anchor='w')
+            form=ttk.Frame(dialog,padding=10);form.pack(fill='x')
+            base=tk.StringVar(value='0')
+            rate=tk.StringVar(value='0')
+            source=tk.StringVar(value='')
+            rule=tk.StringVar(value='')
+            for r,(label,var) in enumerate((('기준금액 (원)',base),('적용 요율 (%)',rate),
+                                           ('기준금액 출처',source),('요율 적용 근거',rule))):
+                ttk.Label(form,text=label,width=19).grid(row=r,column=0,sticky='w',pady=5)
+                ttk.Entry(form,textvariable=var,width=55).grid(row=r,column=1,sticky='ew',pady=5)
+            form.columnconfigure(1,weight=1)
+            result=tk.StringVar(value='산정 결과: -')
+            ttk.Label(dialog,textvariable=result,padding=8).pack(anchor='w')
+            computed=[None]
+            def preview():
+                try:
+                    value,pct=calculate(base.get(),rate.get())
+                    basis_text=calculation_basis(parse_amount(base.get()),pct,source.get(),rule.get())
+                    computed[0]=(value,basis_text)
+                    result.set(f'산정 결과: {int(value):,}원 (원 단위 반올림)')
+                except (ValueError,TypeError) as exc:
+                    computed[0]=None
+                    messagebox.showerror('자동 산정 오류',str(exc),parent=dialog)
+            def transfer():
+                preview()
+                if computed[0] is None:return
+                value,basis_text=computed[0]
+                amount.set(str(value));basis.set(basis_text)
+                if not note.get().strip():note.set('T2 사용자 지정 요율 자동 계산')
+                dialog.destroy()
+                messagebox.showinfo('자동 산정','금액과 산정 근거를 입력란에 반영했습니다.\n'
+                    '기존 [추가 / 선택 행 수정] 버튼을 눌러 확정하세요.',parent=win)
+            buttons=ttk.Frame(dialog,padding=8);buttons.pack()
+            ttk.Button(buttons,text='계산 미리보기',command=preview).pack(side='left',padx=6)
+            ttk.Button(buttons,text='기존 항목 입력란에 반영',command=transfer).pack(side='left',padx=6)
+            ttk.Button(buttons,text='취소',command=dialog.destroy).pack(side='left',padx=6)
+        ttk.Button(actions, text='요율 자동 산정 (T2)', command=auto_calculate).pack(side='left', padx=4)
         ttk.Button(actions, text='추가 / 선택 행 수정', command=apply).pack(side='left', padx=4)
         ttk.Button(actions, text='선택 삭제', command=delete).pack(side='left', padx=4)
         ttk.Button(actions, text='신규 항목 입력', command=clear_selection).pack(side='left', padx=4)
