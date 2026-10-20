@@ -611,6 +611,51 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='선택 항목 삭제',command=remove).pack(side='left',padx=5)
         ttk.Button(buttons,text='세부 공사비 XLSX 산출...',command=export).pack(side='right',padx=5)
 
+    def open_integrated_cost_dialog(self):
+        """D5: exclusive rough/detail choice for each work group, from exported XLSX."""
+        from cost_integrated import GROUPS, read_cost_workbook, integrate_costs, export_integrated_cost
+        win=tk.Toplevel(self);win.title('v12.7.3-D5 통합 공사비 산정');win.geometry('790x405')
+        ttk.Label(win,text='기존 개략/세부 공사비 XLSX를 불러오고 공종별 산정 방식을 하나만 선택합니다.',padding=10).pack(anchor='w')
+        paths={};labels={}
+        for mode,title in (('ROUGH','개략 공사비 XLSX'),('DETAIL','세부 공사비 XLSX')):
+            row=ttk.Frame(win,padding=5);row.pack(fill='x')
+            ttk.Label(row,text=title,width=22).pack(side='left')
+            var=tk.StringVar(value='미선택');labels[mode]=var
+            ttk.Label(row,textvariable=var,width=58).pack(side='left',fill='x',expand=True)
+            def browse(m=mode):
+                p=filedialog.askopenfilename(parent=win,title='공사비 산정서 선택',filetypes=[('Excel','*.xlsx')])
+                if p:
+                    try:
+                        lines=read_cost_workbook(p,m)
+                        paths[m]=p;labels[m].set(f'{p.split("/")[-1]} ({len(lines)}행)')
+                    except (ValueError,OSError,ImportError) as exc:messagebox.showerror('원본 검증',str(exc),parent=win)
+            ttk.Button(row,text='불러오기...',command=browse).pack(side='right')
+        ttk.Label(win,text='공종별 채택 방식 (개략·세부를 동시에 합산하지 않음)',padding=8).pack(anchor='w')
+        selections={}
+        for group in GROUPS:
+            row=ttk.Frame(win,padding=4);row.pack(fill='x',padx=10)
+            ttk.Label(row,text=group,width=14).pack(side='left')
+            var=tk.StringVar(value='미산정');selections[group]=var
+            ttk.Combobox(row,textvariable=var,values=['미산정','개략','세부'],state='readonly',width=20).pack(side='left')
+        ttk.Label(win,text='주의: 세부 산정에 빠진 공종 내 항목을 개략비로 자동 보충하지 않습니다. 원본의 기준연도·포함범위를 확인하세요.',
+                  wraplength=750,padding=10).pack(anchor='w')
+        def run():
+            try:
+                rough=read_cost_workbook(paths['ROUGH'],'ROUGH') if 'ROUGH' in paths else []
+                detail=read_cost_workbook(paths['DETAIL'],'DETAIL') if 'DETAIL' in paths else []
+                modes={'개략':'ROUGH','세부':'DETAIL','미산정':'NONE'}
+                chosen,audit=integrate_costs(rough,detail,{g:modes[v.get()] for g,v in selections.items()})
+                if not chosen:raise ValueError('산정 대상이 없습니다. 원본과 공종별 채택 방식을 선택하세요.')
+                msg='\\n'.join(f'{g}: {m} / {sum(x.amount for x in chosen if x.group==g):,.0f}원' for g,m,*_ in audit)
+                if not messagebox.askyesno('통합 공사비 검토',msg+'\\n\\n각 공종별 포함범위와 기준연도가 일치합니까?',parent=win):return
+                out=filedialog.asksaveasfilename(parent=win,title='통합 공사비 XLSX 저장',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+                if not out:return
+                export_integrated_cost(out,chosen,audit,paths.get('ROUGH'),paths.get('DETAIL'))
+                self.log(f'통합 공사비 산정서 저장: {out}')
+                messagebox.showinfo('통합 공사비','저장 완료 (산정분 합계; 총사업비 아님)',parent=win)
+            except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:messagebox.showerror('통합 공사비',str(exc),parent=win)
+        ttk.Button(win,text='중복 검증 후 통합 XLSX 산출...',command=run).pack(pady=10)
+
     def open_cost_estimate_dialog(self):
         from cost_estimate import available_rough, estimate_rough, export_cost_xlsx
         from quantity_price import load_config

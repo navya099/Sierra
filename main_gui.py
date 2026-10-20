@@ -212,6 +212,9 @@ class AlignmentGUI:
         ttk.Button(cost_panel, text='세부 공사비 XLSX... (수량 연동/직접입력)',
                    command=self.structure_editor.open_detail_cost_dialog,
                    width=30).grid(row=1, column=0, columnspan=2, padx=8, pady=8, sticky='ew')
+        ttk.Button(cost_panel, text='통합 공사비 XLSX... (개략/세부 중복방지)',
+                   command=self.structure_editor.open_integrated_cost_dialog,
+                   width=30).grid(row=2, column=0, columnspan=2, padx=8, pady=8, sticky='ew')
         cost_panel.columnconfigure(0, weight=1)
         cost_panel.columnconfigure(1, weight=1)
         ttk.Label(cost_frame,
