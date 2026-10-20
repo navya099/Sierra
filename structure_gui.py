@@ -79,6 +79,7 @@ class StructureEditor(ttk.Frame):
         ttk.Button(actions,text='터널 수량 XLSX...',command=self.export_tunnel_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='교량 수량 XLSX...',command=self.export_bridge_quantities).pack(side='left',padx=3)
         ttk.Button(actions,text='통합 수량산출서 XLSX...',command=self.export_integrated_quantities).pack(side='left',padx=3)
+        ttk.Button(actions,text='KDI 단가 관리...',command=self.open_unit_price_manager).pack(side='left',padx=3)
         ttk.Label(self,text='자동 후보 생성은 현재 목록을 교체합니다. 수정 중인 내용은 먼저 CSV로 저장하세요.').pack(anchor='w',padx=8)
         cols=('유형','명칭','시작 STA','종료 STA','길이','최대고','최대고 STA','출처')
         wrap=ttk.Frame(self); wrap.pack(fill='both',expand=True,padx=5,pady=5)
@@ -432,6 +433,10 @@ class StructureEditor(ttk.Frame):
                 messagebox.showerror('개략 토공량',str(exc),parent=win)
         ttk.Button(frame,text='XLSX 산출...',command=save).grid(row=4,column=0,pady=8)
         ttk.Button(frame,text='취소',command=win.destroy).grid(row=4,column=1,pady=8)
+
+    def open_unit_price_manager(self):
+        from unit_price_gui import open_unit_price_editor
+        open_unit_price_editor(self)
 
     def export_integrated_quantities(self):
         try:

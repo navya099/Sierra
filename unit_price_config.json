@@ -1,0 +1,11 @@
+{
+  "design_year": 2030,
+  "default_factor": 1.0,
+  "adjustment_note": "보정계수는 사용자가 직접 검증·입력해야 함. 1.0은 물가보정 미적용.",
+  "items": {
+    "REUSE_SOIL_100": {
+      "mode": "manual",
+      "unit_price": 2445.0
+    }
+  }
+}
