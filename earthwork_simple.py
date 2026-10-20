@@ -18,6 +18,7 @@ class SimpleSection:
     # Offset/elevation closed polygon; empty in neutral case
     polygon: tuple[tuple[float,float], ...]
     excluded: bool = False
+    structure_type: str = ""  # 교량/터널, 경계 포함; 중첩 시 교량/터널
 
 @dataclass(frozen=True)
 class EarthworkInterval:
@@ -39,7 +40,7 @@ class EarthworkResult:
     fill_slope: float
 
 
-def section_at(sta, ground_el, plan_el, width, cut_slope, fill_slope, excluded=False):
+def section_at(sta, ground_el, plan_el, width, cut_slope, fill_slope, excluded=False, structure_type=""):
     """Section geometry, with both side slopes horizontal:vertical = m:1."""
     h=plan_el-ground_el
     kind='FILL' if h>1e-9 else 'CUT' if h < -1e-9 else 'ZERO'
@@ -54,7 +55,7 @@ def section_at(sta, ground_el, plan_el, width, cut_slope, fill_slope, excluded=F
         polygon=((-toe,ground_el),(-half,plan_el),(half,plan_el),(toe,ground_el))
     else:
         polygon=()
-    return SimpleSection(sta,ground_el,plan_el,h,kind,area,polygon,excluded)
+    return SimpleSection(sta,ground_el,plan_el,h,kind,area,polygon,excluded,structure_type)
 
 
 def calculate_earthwork(ground_points, alignment, structures=(), width=10., cut_slope=1.5,
@@ -68,10 +69,13 @@ def calculate_earthwork(ground_points, alignment, structures=(), width=10., cut_
     end=min(ground.xs[-1],alignment.vips[-1][0])
     if end<=start:raise ValueError('지반고와 계획고의 공통 구간이 없습니다.')
     exclusions=[]
+    typed_exclusions=[]
     for s in structures:
         if s.kind not in ('BRIDGE','TUNNEL'):continue
         a,b=max(start,s.start_sta),min(end,s.end_sta)
-        if a<b:exclusions.append((a,b))
+        if a<b:
+            exclusions.append((a,b))
+            typed_exclusions.append((a,b,"교량" if s.kind=="BRIDGE" else "터널"))
     # Sorted, merged exclusion intervals (avoid double counting).
     exclusions.sort()
     merged=[]
@@ -79,6 +83,9 @@ def calculate_earthwork(ground_points, alignment, structures=(), width=10., cut_
         if merged and a<=merged[-1][1]+1e-9:merged[-1]=(merged[-1][0],max(b,merged[-1][1]))
         else:merged.append((a,b))
     def inside(sta):return any(a-1e-8<=sta<=b+1e-8 for a,b in merged)
+    def structure_at(sta):
+        types={kind for a,b,kind in typed_exclusions if a-1e-8<=sta<=b+1e-8}
+        return "/".join(kind for kind in ("교량","터널") if kind in types)
     def delta(sta):return alignment.evaluate(sta)[0]-ground.at(sta)[0]
     # Keep the design and ground breakpoints, curve boundaries, 25m stations,
     # and all structure boundaries to avoid smearing across them.
@@ -108,7 +115,7 @@ def calculate_earthwork(ground_points, alignment, structures=(), width=10., cut_
     for sta in stations:
         z=ground.at(sta)[0]
         p=alignment.evaluate(sta)[0]
-        sections.append(section_at(sta,z,p,width,cut_slope,fill_slope,inside(sta)))
+        sections.append(section_at(sta,z,p,width,cut_slope,fill_slope,inside(sta),structure_at(sta)))
     intervals=[]
     for left,right in zip(sections,sections[1:]):
         a,b=left.sta,right.sta
@@ -136,7 +143,7 @@ def export_earthwork_xlsx(result,path):
                '구분','단면적(m²)','구조물 경계/구간'])
     for s in result.sections:
         ws.append([s.sta,s.ground_el,s.plan_el,s.height,s.kind,s.area_m2,
-                   '구조물 경계 포함' if s.excluded else ''])
+                   s.structure_type])
     v=wb.create_sheet('구간별 토공량')
     v.append(['시점 STA(m)','종점 STA(m)','구간길이(m)','절토량(m³)','성토량(m³)','구조물 제외'])
     for r in result.intervals:
