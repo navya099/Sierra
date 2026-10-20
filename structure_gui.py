@@ -439,7 +439,7 @@ class StructureEditor(ttk.Frame):
         import json
         options=available_detail()
         lookup={x['code']:x for x in options}
-        win=tk.Toplevel(self);win.title('v12.7.3-D2 세부 공사비 산정 (수량 연동/직접입력)');win.geometry('1030x650')
+        win=tk.Toplevel(self);win.title('v12.7.3-D3 세부 공사비 산정 (일괄 연동/직접입력)');win.geometry('1030x650')
         ttk.Label(win,text='KDI 세부 단가 선택 → 수량·근거 입력 → 항목 추가. 단위는 단가 DB 기준이며 자동 수량 추정은 하지 않습니다.',padding=8).pack(anchor='w')
         ttk.Label(win,text='같은 공종의 개략 공사비와 합산 금지. 교량 상부공(m)·하부공(개소), 터널 패턴(m) 등은 실제 설계 조건 확인 필수.',padding=8).pack(anchor='w')
         frame=ttk.Frame(win,padding=8);frame.pack(fill='x')
@@ -507,11 +507,28 @@ class StructureEditor(ttk.Frame):
             row=ttk.Frame(review,padding=8);row.pack(fill='x')
             ttk.Label(row,text='선택 후보에 적용할 세부 단가:').pack(side='left')
             match_var=tk.StringVar();combo=ttk.Combobox(row,textvariable=match_var,width=80,state='readonly');combo.pack(side='left',padx=8,fill='x',expand=True)
+            cand_tree.configure(selectmode='extended')
+            def compatible_codes(c):
+                matches=[x for x in options if x['code'] in c.suggested_codes]
+                if c.group=='교량':
+                    if c.item.endswith(' 상부공'):
+                        matches=[x for x in matches if x['code'].startswith('BRIDGE_DETAIL_SUPER_')]
+                    elif c.item.endswith(' 교대'):
+                        matches=[x for x in matches if x['code'].startswith('BRIDGE_DETAIL_SUB_') and '/ 교대 /' in x.get('spec','')]
+                    elif c.item.endswith(' 교각'):
+                        matches=[x for x in matches if x['code'].startswith('BRIDGE_DETAIL_SUB_') and '/ 교각 /' in x.get('spec','')]
+                elif c.group=='터널' and 'NATM 미분류' in c.item:
+                    # D3 does not allow an unallocated full tunnel length to be priced as one pattern.
+                    return []
+                return matches
             def choose(_=None):
                 selected=cand_tree.selection()
                 if not selected:return
-                c=candidates[int(selected[0])]
-                compatible=[x for x in options if x['code'] in c.suggested_codes]
+                selected_candidates=[candidates[int(i)] for i in selected]
+                compatible=compatible_codes(selected_candidates[0])
+                for c in selected_candidates[1:]:
+                    allowed={x['code'] for x in compatible_codes(c)}
+                    compatible=[x for x in compatible if x['code'] in allowed]
                 combo['values']=[f"{x['code']} | {x['name']} | {x['spec']} | {x['condition']} | {x['unit']}" for x in compatible]
                 match_var.set('')
             cand_tree.bind('<<TreeviewSelect>>',choose)
@@ -519,18 +536,29 @@ class StructureEditor(ttk.Frame):
                 try:
                     selected=cand_tree.selection()
                     if not selected:raise ValueError('수량 후보를 선택하세요.')
-                    c=candidates[int(selected[0])]
                     code=match_var.get().split(' | ',1)[0]
-                    if not code:raise ValueError('세부 단가를 명시적으로 선택하세요.')
-                    e=review_selection(c,code)
-                    e['source_id']=str(path)+'::'+c.source
-                    if any(old.get('source_id')==e['source_id'] for old in entries):
-                        raise ValueError('이미 추가한 수량 후보입니다. 기존 항목을 삭제한 후 다시 연결하세요.')
-                    if not messagebox.askyesno('단가 적용 확인',f'{c.item}\n수량: {c.quantity:g} {c.unit}\n선택 단가: {code}\n\n{c.warning}\n\n설계조건과 수량 적용범위를 확인했습니까?',parent=review):return
-                    entries.append(e);refresh()
-                    cand_tree.delete(selected[0]);match_var.set('')
+                    if not code:raise ValueError('선택한 후보에 공통으로 적용할 세부 단가를 선택하세요. 터널 NATM 미분류 연장은 패턴 분할 후 입력해야 합니다.')
+                    prepared=[]
+                    seen={e.get('source_id') for e in entries if e.get('source_id')}
+                    for idx in selected:
+                        c=candidates[int(idx)]
+                        if code not in {x['code'] for x in compatible_codes(c)}:
+                            raise ValueError(f'{c.item}: 선택 단가가 공종·구조물 유형에 맞지 않습니다.')
+                        e=review_selection(c,code)
+                        e['source_id']=str(path)+'::'+c.source
+                        if e['source_id'] in seen:raise ValueError(f'{c.item}: 이미 추가한 수량 후보입니다.')
+                        seen.add(e['source_id']);prepared.append((idx,c,e))
+                    count=len(prepared);qty=sum(c.quantity for _,c,_ in prepared)
+                    sample='\n'.join(f'  {c.item}: {c.quantity:g} {c.unit}' for _,c,_ in prepared[:8])
+                    if count>8:sample+=f'\n  외 {count-8}개'
+                    if not messagebox.askyesno('일괄 단가 적용 확인',
+                        f'{count}개 후보 / 수량 합계 {qty:g} {prepared[0][1].unit}\n단가: {code}\n\n{sample}\n\n각 구조물의 형식·경간·단복선·기초조건이 모두 일치합니까?',parent=review):return
+                    entries.extend(e for _,_,e in prepared);refresh()
+                    for idx,_,_ in prepared:cand_tree.delete(idx)
+                    match_var.set('')
                 except (ValueError,TypeError) as exc:messagebox.showerror('단가 연결',str(exc),parent=review)
-            ttk.Button(row,text='선택 후보를 세부 공사비에 추가...',command=transfer).pack(side='right')
+            ttk.Label(row,text='Ctrl/Shift 다중 선택 가능').pack(side='left',padx=5)
+            ttk.Button(row,text='선택 후보 일괄 추가...',command=transfer).pack(side='right')
         buttons=ttk.Frame(win,padding=8);buttons.pack(fill='x')
         ttk.Button(buttons,text='통합 수량산출서 불러오기 / 단가 연결 검토...',command=import_integrated).pack(side='left',padx=5)
 

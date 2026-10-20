@@ -60,6 +60,13 @@ def export_detail_xlsx(path,rows,config=None):
     groups=('토공','교량','터널')
     sheet('세부공사비총괄',['공종','산정금액(원)','상태'],[(g,sum(r.amount for r in rows if r.group==g),'입력항목 산정' if any(r.group==g for r in rows) else '미산정') for g in groups]+[('산정분 합계',sum(r.amount for r in rows),'미입력 수량 제외, 총사업비 아님')])
     sheet('세부공사비내역',['공종','단가코드','KDI 항목·규격·조건','수량','단위','적용단가(원/단위)','금액(원)','원문 출처','수량 근거/비고'],[(r.group,r.code,r.description,r.quantity,r.unit,r.unit_price,r.amount,r.basis,r.remark) for r in rows])
+    summary={}
+    for r in rows:
+        key=(r.group,r.code,r.description,r.unit,r.unit_price)
+        if key not in summary:summary[key]=[0.0,0.0,0]
+        summary[key][0]+=r.quantity;summary[key][1]+=r.amount;summary[key][2]+=1
+    sheet('동일단가집계',['공종','단가코드','KDI 항목·규격·조건','총수량','단위','적용단가(원/단위)','합계금액(원)','적용행수'],
+          [(g,code,desc,v[0],unit,price,v[1],v[2]) for (g,code,desc,unit,price),v in summary.items()])
     sheet('산정기준',['항목','내용'],[('설계연도',config.get('design_year')),('원문단가기준연도',2019),('기본보정계수',config.get('default_factor',1)),('수량 취득','사용자 명시 입력; 자동 추정하지 않음'),('중복방지','동일 공종 개략·세부 병용 금지'),('합계 주의','선택한 세부 항목만의 산정분 합계; 전체 공사비·사업비 아님'),('단가 주의','KDI 원문 포함범위 및 부가세 중복 검토 필요')])
     for ws in wb:
         for row in ws.iter_rows(min_row=2):
