@@ -218,11 +218,14 @@ class AlignmentGUI:
         ttk.Button(cost_panel, text='공사비 외 비용 XLSX... (v12.7.4-T1)',
                    command=self.structure_editor.open_nonconstruction_cost_dialog,
                    width=30).grid(row=3, column=0, columnspan=2, padx=8, pady=8, sticky='ew')
+        ttk.Button(cost_panel, text='총사업비 산정분 통합 XLSX... (v12.7.5-P1)',
+                   command=self.structure_editor.open_project_cost_dialog,
+                   width=30).grid(row=4, column=0, columnspan=2, padx=8, pady=8, sticky='ew')
         cost_panel.columnconfigure(0, weight=1)
         cost_panel.columnconfigure(1, weight=1)
         ttk.Label(cost_frame,
                   text='KDI 기준단가와 사용자 설정을 관리하고, 구조물 목록을 이용해 개략 공사비를 산정합니다.\n'
-                       '총사업비 출력 기능은 향후 이 탭의 별도 출력 영역에 추가할 예정입니다.',
+                       '총사업비 산정분 통합은 D5 공사비 XLSX와 T1/T2 JSON을 불러와 수행합니다. 전체 총사업비는 미확정입니다.',
                   justify='left').pack(anchor='w', padx=16, pady=5)
         self.vip_tree = self._make_tree(vip_frame, ['구분', 'STA', 'EL', '진입(‰)', '진출(‰)', '변화(‰)'])
         self.station_tree = self._make_tree(station_frame, ['STA', '지반고', '계획고', '표고차', '구배(‰)', '구분'])

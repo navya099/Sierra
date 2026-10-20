@@ -787,6 +787,57 @@ class StructureEditor(ttk.Frame):
         ttk.Button(actions, text='XLSX 출력', command=export).pack(side='right', padx=4)
         replace([CostItem(category, title, parse_amount('0')) for category,title in DEFAULT_ITEMS])
 
+    def open_project_cost_dialog(self):
+        """P1: combine two independently exported snapshots, never change D5/T2."""
+        from project_cost import aggregate, export_project_cost
+        from pathlib import Path
+        win=tk.Toplevel(self)
+        win.title('v12.7.5-P1 총사업비 산정분 통합')
+        win.geometry('850x440')
+        win.transient(self.winfo_toplevel())
+        ttk.Label(win,text='D5 통합 공사비 XLSX + T1/T2 공사비 외 비용 JSON (전체 총사업비는 미확정)',padding=10).pack(anchor='w')
+        paths={};labels={}
+        for key,title,types in (
+            ('construction','D5 통합 공사비 XLSX',[('Excel','*.xlsx')]),
+            ('other','T1/T2 공사비 외 비용 JSON',[('JSON','*.json')])):
+            row=ttk.Frame(win,padding=6);row.pack(fill='x')
+            ttk.Label(row,text=title,width=30).pack(side='left')
+            var=tk.StringVar(value='미선택');labels[key]=var
+            ttk.Label(row,textvariable=var,width=58).pack(side='left',fill='x',expand=True)
+            def choose(k=key,t=types):
+                filename=filedialog.askopenfilename(parent=win,filetypes=t)
+                if filename:paths[k]=filename;labels[k].set(Path(filename).name)
+            ttk.Button(row,text='찾아보기',command=choose).pack(side='right')
+        display=tk.Text(win,height=12,wrap='word',state='disabled')
+        display.pack(fill='both',expand=True,padx=12,pady=8)
+        result=[None]
+        def preview():
+            try:
+                r=aggregate(paths.get('construction',''),paths.get('other',''))
+                result[0]=r
+                lines=['[산정분 합계] {:,}원'.format(int(r.subtotal)),
+                       '전체 총사업비: 미확정', '', '[노반 공사비]']
+                lines.extend(f'{g}: {int(v):,}원' for g,v in r.construction)
+                lines+=['','[공사비 외 비용]']
+                lines.extend(f'{g}: {int(v):,}원' for g,v in r.other)
+                lines+=['','[미산정 공종] '+', '.join(r.missing),
+                        '', '※ D5의 세부 누락 항목 및 부가세·가격 기준연도·중복은 별도 검증 필요']
+                display.config(state='normal');display.delete('1.0','end');display.insert('end','\n'.join(lines));display.config(state='disabled')
+            except (ValueError,OSError,KeyError,TypeError) as exc:
+                result[0]=None;messagebox.showerror('통합 검증 실패',str(exc),parent=win)
+        def export():
+            preview()
+            if result[0] is None:return
+            filename=filedialog.asksaveasfilename(parent=win,defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+            if not filename:return
+            try:
+                export_project_cost(filename,result[0]);self.log(f'총사업비 산정분 통합 XLSX: {filename}')
+                messagebox.showinfo('출력 완료','총사업비 산정분 XLSX 출력 완료 (전체 총사업비 미확정)',parent=win)
+            except (ValueError,OSError,ImportError) as exc:messagebox.showerror('출력 실패',str(exc),parent=win)
+        row=ttk.Frame(win,padding=8);row.pack(fill='x')
+        ttk.Button(row,text='원본 검증 및 미리보기',command=preview).pack(side='left',padx=6)
+        ttk.Button(row,text='총사업비 산정분 XLSX 출력',command=export).pack(side='right',padx=6)
+
     def open_integrated_cost_dialog(self):
         """D5: exclusive rough/detail choice for each work group, from exported XLSX."""
         from cost_integrated import GROUPS, read_cost_workbook, integrate_costs, export_integrated_cost
