@@ -1105,7 +1105,7 @@ class StructureEditor(ttk.Frame):
 
     def open_integrated_cost_dialog(self):
         """D5: exclusive rough/detail choice for each work group, from exported XLSX."""
-        from cost_integrated import GROUPS, read_cost_workbook, integrate_costs, export_integrated_cost
+        from cost_decision_engine import GROUPS, read_cost_workbook, decide_costs, export_integrated_cost
         win=tk.Toplevel(self);win.title('v12.7.3-D5 통합 공사비 산정');win.geometry('790x405')
         ttk.Label(win,text='기존 개략/세부 공사비 XLSX를 불러오고 공종별 산정 방식을 하나만 선택합니다.',padding=10).pack(anchor='w')
         paths={};labels={}
@@ -1133,10 +1133,9 @@ class StructureEditor(ttk.Frame):
                   wraplength=750,padding=10).pack(anchor='w')
         def run():
             try:
-                rough=read_cost_workbook(paths['ROUGH'],'ROUGH') if 'ROUGH' in paths else []
-                detail=read_cost_workbook(paths['DETAIL'],'DETAIL') if 'DETAIL' in paths else []
                 modes={'개략':'ROUGH','세부':'DETAIL','미산정':'NONE'}
-                chosen,audit=integrate_costs(rough,detail,{g:modes[v.get()] for g,v in selections.items()})
+                chosen,audit=decide_costs(paths.get('ROUGH'),paths.get('DETAIL'),
+                                          {g:modes[v.get()] for g,v in selections.items()})
                 if not chosen:raise ValueError('산정 대상이 없습니다. 원본과 공종별 채택 방식을 선택하세요.')
                 msg='\\n'.join(f'{g}: {m} / {sum(x.amount for x in chosen if x.group==g):,.0f}원' for g,m,*_ in audit)
                 if not messagebox.askyesno('통합 공사비 검토',msg+'\\n\\n각 공종별 포함범위와 기준연도가 일치합니까?',parent=win):return
@@ -1149,7 +1148,7 @@ class StructureEditor(ttk.Frame):
         ttk.Button(win,text='중복 검증 후 통합 XLSX 산출...',command=run).pack(pady=10)
 
     def open_cost_estimate_dialog(self):
-        from cost_estimate import available_rough, estimate_rough, export_cost_xlsx
+        from cost_rough_engine import available_rough, estimate_rough, export_cost_xlsx
         from quantity_price import load_config
         opts=available_rough()
         win=tk.Toplevel(self);win.title('v12.7.2 개략 공사비 산정');win.geometry('820x290')
