@@ -10,6 +10,7 @@ from profile_calculator import read_ground_points
 from system_kdi_link import load_eligible_catalog, provenance
 from track_length_link import segment_lengths, quantity_for_price
 from long_tunnel_rough import classify_tunnels, segment_key, estimate_long_tunnels
+from station_segment_analysis import classify_station, add_station_segment_sheet, number as station_number
 from station81_rough import RATES as STATION81_RATES, eligible as station81_eligible, estimate as estimate_station81, add_sheet as add_station81_sheet
 
 TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축','정거장(노반)')
@@ -165,8 +166,70 @@ def _build_system_workbook(records,lengths,tracks):
         for col in 'ABCDEFGHI':sheet.column_dimensions[col].width=28 if col!='I' else 90
     return wb
 
+
+def open_station_segment_dialog(parent, editor):
+    """Independent U10 workflow: no edits to U9 price selection or structure data."""
+    dialog=tk.Toplevel(parent);dialog.title('U10 정거장 구간 판별');dialog.geometry('1050x680');dialog.transient(parent)
+    ttk.Label(dialog,text='정거장별 시작 STA와 끝 STA 또는 연장(m)을 입력하세요. 기존 교량·터널은 읽기 전용입니다.',padding=8).pack(anchor='w')
+    host=ttk.Frame(dialog,padding=8);host.pack(fill='x')
+    rows=[]
+    def add_row():
+        i=len(rows)+1;line=ttk.Frame(host);line.pack(fill='x',pady=3)
+        name=tk.StringVar(value=f'정거장 {i:02d}');start=tk.StringVar();mode=tk.StringVar(value='끝 STA');last=tk.StringVar()
+        ttk.Entry(line,textvariable=name,width=19).pack(side='left',padx=3)
+        ttk.Label(line,text='시작 STA(m)').pack(side='left')
+        ttk.Entry(line,textvariable=start,width=14).pack(side='left',padx=3)
+        ttk.Combobox(line,textvariable=mode,values=['끝 STA','연장(m)'],state='readonly',width=10).pack(side='left',padx=3)
+        ttk.Entry(line,textvariable=last,width=14).pack(side='left',padx=3)
+        def remove():rows.remove(item);line.destroy()
+        ttk.Button(line,text='삭제',command=remove).pack(side='left',padx=4)
+        item=(name,start,mode,last,line);rows.append(item)
+    for _ in range(3):add_row()
+    ttk.Button(dialog,text='+ 정거장 추가',command=add_row).pack(anchor='w',padx=12,pady=6)
+    result=tk.Text(dialog,height=15,wrap='none');result.pack(fill='both',expand=True,padx=12,pady=6)
+    cache=[]
+    def calculate():
+        try:
+            _,alignment=editor.get_context()
+            if alignment is None or len(alignment.vips)<2:raise ValueError('종단 선형을 먼저 불러오세요.')
+            lo,hi=alignment.vips[0][0],alignment.vips[-1][0]
+            output=[]
+            for name,start,mode,last,_ in rows:
+                if not start.get().strip() and not last.get().strip():continue
+                label=name.get().strip()
+                if not label:raise ValueError('정거장명을 입력하세요.')
+                a=station_number(start.get(),f'{label} 시작 STA')
+                end=station_number(last.get(),f'{label} 끝 STA 또는 연장')
+                if mode.get()=='연장(m)':end=a+end
+                output.append(classify_station(label,a,end,editor.segments,lo,hi))
+            if not output:raise ValueError('정거장 구간을 하나 이상 입력하세요.')
+            ordered=sorted(output,key=lambda x:x['start'])
+            for left,right in zip(ordered,ordered[1:]):
+                if right['start']<left['end']:raise ValueError(f"정거장 구간 중복: {left['name']} / {right['name']}")
+            cache[:]=output
+            result.delete('1.0','end')
+            for r in output:
+                result.insert('end',f"{r['name']} | {r['start']}~{r['end']}m | {r['length']}m | {r['sequence']} | {r['classification']}\n")
+                result.insert('end','  '+', '.join(f'{k}: {r["lengths"][code]}m ({r["lengths"][code]/r["length"]*100:.2f}%)' for code,k in [('EARTH','토공'),('BRIDGE','교량'),('TUNNEL','터널')])+'\n')
+            return True
+        except Exception as exc:messagebox.showerror('구간 판별 오류',str(exc),parent=dialog);return False
+    def export():
+        if not calculate():return
+        path=filedialog.asksaveasfilename(parent=dialog,defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')],initialfile='station_segments_u10.xlsx')
+        if not path:return
+        try:
+            from openpyxl import Workbook
+            wb=Workbook();wb.active.title='안내';wb.active['A1']='U10 정거장 구간 판별: 공사비 자동 차감 없음'
+            add_station_segment_sheet(wb,cache);wb.save(path)
+            messagebox.showinfo('저장 완료',f'정거장 {len(cache)}개소 구간 판별 XLSX 저장 완료',parent=dialog)
+        except Exception as exc:messagebox.showerror('XLSX 오류',str(exc),parent=dialog)
+    bar=ttk.Frame(dialog,padding=10);bar.pack(fill='x')
+    ttk.Button(bar,text='구조물 판별',command=calculate).pack(side='left',padx=5)
+    ttk.Button(bar,text='판별 결과 XLSX 저장',command=export).pack(side='left',padx=5)
+    ttk.Button(bar,text='닫기',command=dialog.destroy).pack(side='right',padx=5)
+
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U9-STATION81 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U10-STATION-SEG1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
@@ -320,6 +383,8 @@ def open_rough_workspace(editor):
             ttk.Entry(line,textvariable=station_count,width=12).pack(side='left',padx=8)
             ttk.Label(frame,text='정거장 개소수는 자동 추정하지 않습니다. 역이 0개인 경우 0을 입력하세요.').pack(anchor='w')
         elif group=='정거장(노반)':
+            ttk.Label(frame,text='U10: 정거장별 측점 구간과 기존 교량·터널의 중첩을 분석합니다. 기존 정거장 개소당 단가 산정과 독립입니다.',wraplength=950).pack(anchor='w',pady=3)
+            ttk.Button(frame,text='정거장 구간 입력 · 구조물 판별 · XLSX 출력',command=lambda: open_station_segment_dialog(win,editor)).pack(anchor='w',pady=5)
             station_box=ttk.LabelFrame(frame,text='정거장 노반 개략공사비 · 표 Ⅲ-81 (개소당, 사용자 선택)',padding=8)
             station_box.pack(fill='x',pady=8)
             ttk.Label(station_box,text='토공부/교량부 · 승강장 구성 · 일반부/도시부 선택 | 단선 2홈 4선은 원문 단가 없음 | 역사 건축비와 별도',wraplength=950).pack(anchor='w')
