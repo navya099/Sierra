@@ -86,4 +86,4 @@ def export_cost_xlsx(path,rows,review,lengths,config=None):
         ('포함범위','선택된 KDI 개략 토공·교량·터널 공사비','용지비·차량비·부대비·제경비·VAT 등 별도 검토'),
         ('주의','공종별 조건은 사용자가 선택','단선/복선, 일반/도시, 기초형식 자동 추정 금지'),
         ('미산정','선택되지 않은 공종은 0원이 아님','총괄의 산정분 합계는 전체 사업비가 아님')])
-    wb.active=0;wb.save(str(path))
+    wb.active=0;wb.save(path)

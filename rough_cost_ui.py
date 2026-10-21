@@ -41,7 +41,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks):
                        'basis':provenance(row,'kdi_general_rail_2019.json')+f' | [U2 개략] {scope} {lengths[scope]}m / 1000'})
     return result
 
-def _export_system_sheet(path,records,lengths,tracks):
+def _build_system_workbook(records,lengths,tracks):
     from openpyxl import Workbook
     from openpyxl.styles import Font,PatternFill
     wb=Workbook();summary=wb.active;summary.title='시스템개략총괄'
@@ -63,7 +63,7 @@ def _export_system_sheet(path,records,lengths,tracks):
         sheet.freeze_panes='A2'
         for c in sheet[1]:c.font=Font(bold=True,color='FFFFFF');c.fill=PatternFill('solid',fgColor='17365D')
         for col in 'ABCDEFGHI':sheet.column_dimensions[col].width=28 if col!='I' else 90
-    wb.save(str(path))
+    return wb
 
 def open_rough_workspace(editor):
     win=tk.Toplevel(editor);win.title('v12.8-S2.5-U2 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
@@ -140,27 +140,49 @@ def open_rough_workspace(editor):
                     system_records+=_rough_system_rows(catalog,{group:code},lengths,track_count.get())
             path=filedialog.asksaveasfilename(parent=win,title='개략 공사비 XLSX 저장 (노반 D5 + 시스템 개략 별도 시트)',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
             if not path:return
-            # Export frozen roadbed schema, then append separate system rough sheets.
-            if has_roadbed:export_cost_xlsx(path,rows,review,road_lengths,load_config())
-            if has_system:
-                from openpyxl import load_workbook
-                from tempfile import NamedTemporaryFile
-                with NamedTemporaryFile(suffix='.xlsx',delete=False) as f:tmp=f.name
-                try:
-                    _export_system_sheet(tmp,system_records,lengths,track_count.get())
-                    if has_roadbed:
-                        main=load_workbook(path);sub=load_workbook(tmp)
-                        for src_ws in sub:
-                            dst=main.create_sheet(src_ws.title)
-                            for row in src_ws.iter_rows():
-                                for cell in row:
-                                    dst[cell.coordinate]=cell.value
-                        main.save(path)
+            # HF2: assemble the complete workbook in memory. No filesystem
+            # temporary files, os.replace, or Windows rename/delete races.
+            from io import BytesIO
+            from openpyxl import load_workbook
+            main = None
+            system_wb = None
+            buffer = None
+            try:
+                if has_roadbed:
+                    buffer = BytesIO()
+                    export_cost_xlsx(buffer, rows, review, road_lengths, load_config())
+                    buffer.seek(0)
+                    main = load_workbook(buffer)
+                if has_system:
+                    system_wb = _build_system_workbook(system_records, lengths, track_count.get())
+                    if main is None:
+                        main = system_wb
+                        system_wb = None
                     else:
-                        # System-only output: no D5-compatible roadbed sheets, deliberately.
-                        from shutil import copyfile
-                        copyfile(tmp,path)
-                finally:Path(tmp).unlink(missing_ok=True)
+                        for src_ws in system_wb:
+                            # Both source workbooks have '산정기준'; keep D5
+                            # roadbed sheet unchanged, add system basis separately.
+                            sheet_name = ('시스템산정기준' if src_ws.title == '산정기준'
+                                          else src_ws.title)
+                            dst_ws = main.create_sheet(sheet_name)
+                            for cells in src_ws.iter_rows():
+                                for cell in cells:
+                                    dst_ws[cell.coordinate] = cell.value
+                # A single openpyxl save writes directly to the selected path.
+                # No .rough_cost_* files are created at any stage.
+                main.save(path)
+            except PermissionError as exc:
+                raise PermissionError(
+                    f'선택한 XLSX에 쓰기 권한이 없거나 다른 프로그램이 사용 중입니다: {path}\n'
+                    'Excel/탐색기 미리보기/동기화 프로그램의 파일 점유 여부를 확인하세요.'
+                ) from exc
+            finally:
+                if main is not None:
+                    main.close()
+                if system_wb is not None:
+                    system_wb.close()
+                if buffer is not None:
+                    buffer.close()
             editor.log(f'개략 공사비 XLSX 저장(U2): {path}')
             status.set('저장 완료 · 노반은 기존 D5 형식, 시스템은 독립 시트로 산정 · 미선택 공종은 미산정')
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
