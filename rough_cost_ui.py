@@ -12,6 +12,20 @@ from track_length_link import segment_lengths, quantity_for_price
 
 TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축')
 
+def _roadbed_track_type(code):
+    """Read explicit S/D/E track configuration from verified rough KDI code."""
+    import re
+    match = re.search(r'_([SDE])_(?:RURAL|URBAN)$', code)
+    if not match:
+        raise ValueError(f'노반 단가의 단선/복선 조건을 판별할 수 없습니다: {code}')
+    return {'S': 1, 'D': 2, 'E': 3}[match.group(1)]
+
+def validate_roadbed_tracks(chosen, track_type):
+    for group, code in chosen.items():
+        if code and _roadbed_track_type(code) != track_type:
+            names = {1:'단선',2:'복선',3:'복선전철'}
+            raise ValueError(f'{group}: 선택한 단가({names[_roadbed_track_type(code)]})와 공통 선로형식({names[track_type]})이 다릅니다. 노반 단가를 다시 선택하세요.')
+
 def _source_catalog():
     return load_eligible_catalog(Path(__file__).with_name('kdi_general_rail_2019.json'))
 
@@ -72,11 +86,18 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U3-CAT1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U3-CAT1-HF1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={}
-    track_count=tk.IntVar(value=1)
+    track_type=tk.IntVar(value=1)
+    track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
+    def system_track_count():
+        return 1 if track_type.get()==1 else 2
+    shared=ttk.LabelFrame(win,text='공통 선로형식 (노반·궤도·전차선·전력 적용)',padding=6)
+    shared.pack(fill='x',padx=12,pady=(0,4))
+    for label,value in (('단선',1),('복선',2),('복선전철',3)):
+        ttk.Radiobutton(shared,text=label,variable=track_type,value=value).pack(side='left',padx=14)
     def picker(parent,group,rows,variable):
         choices=['미선택 (미산정)']
         for item in rows:
@@ -87,7 +108,7 @@ def open_rough_workspace(editor):
         frame=ttk.Frame(notebook,padding=14);notebook.add(frame,text=group)
         ttk.Label(frame,text=group+' 개략 공사비',font=('',12,'bold')).pack(anchor='w',pady=(0,10))
         if group=='노반':
-            ttk.Label(frame,text='기존 v12.7.2 노반 개략 계산식 및 D5 호환 XLSX 그대로 사용').pack(anchor='w')
+            ttk.Label(frame,text='공통 선로형식과 동일한 단가만 적용 가능 · 기존 노반 계산식 및 D5 형식 유지').pack(anchor='w')
             for work in ('토공','교량','터널'):
                 row=ttk.Frame(frame,padding=5);row.pack(fill='x')
                 ttk.Label(row,text=work,width=9).pack(side='left')
@@ -98,9 +119,7 @@ def open_rough_workspace(editor):
                 ttk.Combobox(row,textvariable=v,values=choices,state='readonly',width=95).pack(side='left',fill='x',expand=True)
             ttk.Label(frame,text='토공·교량·터널 연장은 기존 검증된 노반 계산에서 산출합니다.',wraplength=850).pack(anchor='w',pady=15)
         elif group in ('궤도','전력','전차선'):
-            ttk.Label(frame,text='선로수(공통): 단선 또는 복선 직접 선택').pack(anchor='w')
-            ttk.Radiobutton(frame,text='단선',variable=track_count,value=1).pack(anchor='w')
-            ttk.Radiobutton(frame,text='복선',variable=track_count,value=2).pack(anchor='w')
+            ttk.Label(frame,text='선로형식은 창 상단 공통 선택을 사용합니다 (복선전철은 시스템 단가의 복선에 대응).').pack(anchor='w')
             rows=[r for r in catalog if r['group']==group and r.get('method')=='ROUGH']
             if group=='궤도':
                 ttk.Label(frame,text='전체 노선연장 × 선택한 KDI 궤도 개략 km 단가 (1개 선택)').pack(anchor='w',pady=8)
@@ -132,6 +151,7 @@ def open_rough_workspace(editor):
             system_chosen={g:lookup.get(v.get(),'') for g,v in system_vars.items()}
             power_chosen={scope:lookup.get(v.get(),'') for scope,v in power_vars.items()}
             cat_chosen={scope:lookup.get(v.get(),'') for scope,v in cat_vars.items()}
+            validate_roadbed_tracks(chosen,track_type.get())
             has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values())
             if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
@@ -147,10 +167,10 @@ def open_rough_workspace(editor):
                 for scope,code in power_chosen.items():
                     if code:selections_to_calc['전력_'+scope]=code
                 for scope,code in cat_chosen.items():
-                    if code:system_records+=_rough_system_rows(catalog,{'전차선':code},lengths,track_count.get())
+                    if code:system_records+=_rough_system_rows(catalog,{'전차선':code},lengths,system_track_count())
                 for key,code in selections_to_calc.items():
                     group='전력' if key.startswith('전력_') else key
-                    system_records+=_rough_system_rows(catalog,{group:code},lengths,track_count.get())
+                    system_records+=_rough_system_rows(catalog,{group:code},lengths,system_track_count())
             path=filedialog.asksaveasfilename(parent=win,title='개략 공사비 XLSX 저장 (노반 D5 + 시스템 개략 별도 시트)',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
             if not path:return
             # HF2: assemble the complete workbook in memory. No filesystem
@@ -167,7 +187,7 @@ def open_rough_workspace(editor):
                     buffer.seek(0)
                     main = load_workbook(buffer)
                 if has_system:
-                    system_wb = _build_system_workbook(system_records, lengths, track_count.get())
+                    system_wb = _build_system_workbook(system_records, lengths, system_track_count())
                     if main is None:
                         main = system_wb
                         system_wb = None
@@ -196,7 +216,7 @@ def open_rough_workspace(editor):
                     system_wb.close()
                 if buffer is not None:
                     buffer.close()
-            editor.log(f'개략 공사비 XLSX 저장(U2): {path}')
+            editor.log(f'개략 공사비 XLSX 저장(U3-CAT1-HF1, 선로형식={track_type.get()}): {path}')
             status.set('저장 완료 · 노반은 기존 D5 형식, 시스템은 독립 시트로 산정 · 미선택 공종은 미산정')
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
