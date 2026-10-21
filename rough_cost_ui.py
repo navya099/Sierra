@@ -28,6 +28,12 @@ def _rough_system_rows(catalog, selected, lengths, tracks):
         if group=='궤도':
             q=quantity_for_price(row,lengths,tracks,'전체')
             scope='전체'
+        elif group=='전차선':
+            scope=next((label for suffix,label in (('_EARTH','토공'),('_BRIDGE','교량'),('_TUNNEL','터널')) if code.endswith(suffix)),None)
+            if scope is None:raise ValueError(f'{code}: 지세 분류가 없습니다.')
+            if ('_D_' in code and tracks!=2) or ('_S_' in code and tracks!=1):
+                raise ValueError(f'{code}: 단선/복선 선택이 단가 조건과 다릅니다.')
+            q=lengths[scope]/Decimal(1000)
         elif group=='전력':
             scope='터널' if code.endswith('_TUN') else '토공'
             expected=1 if code.startswith('POWER_S_') else 2
@@ -57,7 +63,7 @@ def _build_system_workbook(records,lengths,tracks):
     note.append(['가격 기준','KDI 2019 원문 단가, 물가보정 없음'])
     note.append(['선로수',tracks])
     for k,v in lengths.items():note.append([k+' 연장(m)',float(v)])
-    note.append(['미산정 주의','미선택 공종과 전차선 개략표 Ⅲ-94는 0원으로 간주하지 않음'])
+    note.append(['미산정 주의','미선택 공종은 0원으로 간주하지 않음. 전차선 야간 할증 미적용'])
     note.append(['D5 호환','본 파일은 시스템 개략 보조 산정서이며 기존 D5 노반 입력 파일로 사용하지 않음'])
     for sheet in wb:
         sheet.freeze_panes='A2'
@@ -66,10 +72,10 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U2 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U3-CAT1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={}
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={}
     track_count=tk.IntVar(value=1)
     def picker(parent,group,rows,variable):
         choices=['미선택 (미산정)']
@@ -91,7 +97,7 @@ def open_rough_workspace(editor):
                 v=tk.StringVar(value=choices[0]);selections[work]=v
                 ttk.Combobox(row,textvariable=v,values=choices,state='readonly',width=95).pack(side='left',fill='x',expand=True)
             ttk.Label(frame,text='토공·교량·터널 연장은 기존 검증된 노반 계산에서 산출합니다.',wraplength=850).pack(anchor='w',pady=15)
-        elif group in ('궤도','전력'):
+        elif group in ('궤도','전력','전차선'):
             ttk.Label(frame,text='선로수(공통): 단선 또는 복선 직접 선택').pack(anchor='w')
             ttk.Radiobutton(frame,text='단선',variable=track_count,value=1).pack(anchor='w')
             ttk.Radiobutton(frame,text='복선',variable=track_count,value=2).pack(anchor='w')
@@ -99,6 +105,13 @@ def open_rough_workspace(editor):
             if group=='궤도':
                 ttk.Label(frame,text='전체 노선연장 × 선택한 KDI 궤도 개략 km 단가 (1개 선택)').pack(anchor='w',pady=8)
                 v=tk.StringVar();system_vars[group]=v;picker(frame,group,rows,v)
+            elif group=='전차선':
+                ttk.Label(frame,text='KDI 표 Ⅲ-94 · 2019년 · 주간 · VAT 제외 | 토공·교량·터널 각각 1개 단가 선택',wraplength=870).pack(anchor='w',pady=8)
+                ttk.Label(frame,text='강체가선은 복선 터널에만 원문 단가가 있습니다. 운행선 야간 할증은 미적용.',wraplength=870).pack(anchor='w')
+                for scope,suffix in (('토공','_EARTH'),('교량','_BRIDGE'),('터널','_TUNNEL')):
+                    ttk.Label(frame,text=scope+' 단가').pack(anchor='w',pady=(8,0))
+                    v=tk.StringVar();cat_vars[scope]=v
+                    picker(frame,group,[r for r in rows if r['code'].endswith(suffix)],v)
             else:
                 ttk.Label(frame,text='토공과 터널은 각각 원문 개략 단가를 선택합니다. 교량 별도 단가는 원문 DB에 없으므로 미산정으로 표시합니다.',wraplength=870).pack(anchor='w',pady=8)
                 for scope in ('토공','터널'):
@@ -106,13 +119,10 @@ def open_rough_workspace(editor):
                     v=tk.StringVar();power_vars[scope]=v
                     picker(frame,group,[r for r in rows if (r['code'].endswith('_TUN'))==(scope=='터널')],v)
                 ttk.Label(frame,text='전력의 토공·터널은 각각 별도 산정하고, 구조물 연장 중복 적용을 방지합니다.').pack(anchor='w',pady=10)
-        elif group=='전차선':
-            ttk.Label(frame,text='원문 개략표 Ⅲ-94 단가가 아직 DB에 없습니다. 기존 CAT_* 항목은 세부표 Ⅲ-95이므로 사용하지 않습니다.',wraplength=900).pack(anchor='w')
-            ttk.Label(frame,text='개략 단가 원문 숫자 확인 및 DB 등록 후 이 탭을 활성화합니다. 현재 미산정입니다.').pack(anchor='w',pady=10)
         else:
             ttk.Label(frame,text='원문 개략 항목·수량 산정 방식 검증 후 다음 버전에서 활성화합니다. 현재 미산정입니다.').pack(anchor='w')
     footer=ttk.Frame(win,padding=12);footer.pack(fill='x')
-    status=tk.StringVar(value='노반·궤도·전력 개략 선택 가능 | 전차선 및 기타 공종 미산정')
+    status=tk.StringVar(value='노반·궤도·전력·전차선 개략 선택 가능 | 기타 공종 미산정')
     ttk.Label(footer,textvariable=status,wraplength=950).pack(anchor='w',pady=(0,8))
     def export():
         try:
@@ -121,7 +131,8 @@ def open_rough_workspace(editor):
             chosen={g:lookup.get(v.get(),'') for g,v in selections.items()}
             system_chosen={g:lookup.get(v.get(),'') for g,v in system_vars.items()}
             power_chosen={scope:lookup.get(v.get(),'') for scope,v in power_vars.items()}
-            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values())
+            cat_chosen={scope:lookup.get(v.get(),'') for scope,v in cat_vars.items()}
+            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values())
             if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
             if has_roadbed:
@@ -135,6 +146,8 @@ def open_rough_workspace(editor):
                 selections_to_calc=dict(system_chosen)
                 for scope,code in power_chosen.items():
                     if code:selections_to_calc['전력_'+scope]=code
+                for scope,code in cat_chosen.items():
+                    if code:system_records+=_rough_system_rows(catalog,{'전차선':code},lengths,track_count.get())
                 for key,code in selections_to_calc.items():
                     group='전력' if key.startswith('전력_') else key
                     system_records+=_rough_system_rows(catalog,{group:code},lengths,track_count.get())
@@ -188,6 +201,6 @@ def open_rough_workspace(editor):
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U2)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U3)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
