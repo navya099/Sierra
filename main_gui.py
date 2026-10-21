@@ -34,6 +34,8 @@ except ImportError:
     HAS_DND = False
 
 
+APP_VERSION = "v12.8-S2.5-U9-STATION81"
+
 def parse_ground_txt(path: Path) -> list[tuple[float, float]]:
     points = []
     with path.open('r', encoding='utf-8-sig') as stream:
@@ -117,7 +119,7 @@ class AlignmentGUI:
         menu.add_cascade(label='도구', menu=tools)
         help_menu = tk.Menu(menu, tearoff=False)
         help_menu.add_command(label='사용자 매뉴얼', command=self.show_manual)
-        help_menu.add_command(label='프로그램 정보', command=lambda: messagebox.showinfo('프로그램 정보', '종단선형 설계 GUI v1.0\nv12.8-S2.5-U8-LONGTUN2\nDXF 기반 독립형 종단 분석'))
+        help_menu.add_command(label='프로그램 정보', command=lambda: messagebox.showinfo('프로그램 정보', f'종단선형 설계 GUI\n버전: {APP_VERSION}\nDXF 기반 독립형 종단 분석'))
         menu.add_cascade(label='도움말', menu=help_menu)
         self.root.config(menu=menu)
 

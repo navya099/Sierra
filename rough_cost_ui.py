@@ -10,8 +10,9 @@ from profile_calculator import read_ground_points
 from system_kdi_link import load_eligible_catalog, provenance
 from track_length_link import segment_lengths, quantity_for_price
 from long_tunnel_rough import classify_tunnels, segment_key, estimate_long_tunnels
+from station81_rough import RATES as STATION81_RATES, eligible as station81_eligible, estimate as estimate_station81, add_sheet as add_station81_sheet
 
-TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축')
+TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축','정거장(노반)')
 
 def _roadbed_track_type(code):
     """Read explicit S/D/E track configuration from verified rough KDI code."""
@@ -47,6 +48,8 @@ def _eligible_for_track(code, track_type):
         return variant in {1: ('S_NON','S_E'), 2: ('D_NON',), 3: ('D_E','D_CITY')}[track_type]
     if code.startswith('SUB_ROUGH_'):
         return code.startswith('SUB_ROUGH_S_') if track_type == 1 else code.startswith('SUB_ROUGH_D_')
+    if code.startswith('ST81_'):
+        return code.split('_')[-2] == {1:'S',2:'D',3:'E'}[track_type]
     if code.startswith('ARCH_ROUGH_'):
         return code.startswith({1:'ARCH_ROUGH_S_',2:'ARCH_ROUGH_D_',3:'ARCH_ROUGH_E_'}[track_type])
     if code.startswith('POWER_'):
@@ -163,10 +166,10 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U8-LONGTUN2 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U9-STATION81 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];long_tunnel_entries={}
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
     track_type=tk.IntVar(value=1)
     track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
     def system_track_count():
@@ -316,6 +319,26 @@ def open_rough_workspace(editor):
             ttk.Label(line,text='정거장 개소수 (필수 · 0 이상의 정수):').pack(side='left')
             ttk.Entry(line,textvariable=station_count,width=12).pack(side='left',padx=8)
             ttk.Label(frame,text='정거장 개소수는 자동 추정하지 않습니다. 역이 0개인 경우 0을 입력하세요.').pack(anchor='w')
+        elif group=='정거장(노반)':
+            station_box=ttk.LabelFrame(frame,text='정거장 노반 개략공사비 · 표 Ⅲ-81 (개소당, 사용자 선택)',padding=8)
+            station_box.pack(fill='x',pady=8)
+            ttk.Label(station_box,text='토공부/교량부 · 승강장 구성 · 일반부/도시부 선택 | 단선 2홈 4선은 원문 단가 없음 | 역사 건축비와 별도',wraplength=950).pack(anchor='w')
+            for i in range(10):
+                line=ttk.Frame(station_box);line.pack(fill='x',pady=2)
+                ttk.Label(line,text=f'정거장 {i+1:02d}',width=11).pack(side='left')
+                v=tk.StringVar(value='미선택 (미산정)');qty=tk.StringVar(value='0')
+                choices=['미선택 (미산정)']
+                for item in STATION81_RATES:
+                    track={'S':'단선','D':'복선','E':'복선전철'}[item['track']]
+                    region='일반부' if item['region']=='RURAL' else '도시부'
+                    label=f"{item['code']} | {item['structure']} / {item['service']} / {item['platform']} / {track} / {region} | {item['price_krw']:,}원/개소"
+                    choices.append(label);lookup[label]=item['code']
+                combo=ttk.Combobox(line,textvariable=v,values=choices,state='readonly',width=85)
+                combo.pack(side='left',fill='x',expand=True)
+                filtered_pickers.append((combo,v,choices))
+                ttk.Label(line,text='개소').pack(side='left',padx=5)
+                ttk.Entry(line,textvariable=qty,width=6).pack(side='left')
+                station81_entries.append((v,qty))
         elif group=='건축':
             ttk.Label(frame,text='KDI 표 Ⅲ-86 · 2019년 · 억원/개소 · 제비율 포함, VAT 제외 | 유형별 역사 개소수 입력',wraplength=850).pack(anchor='w',pady=6)
             ttk.Label(frame,text='각 행에서 역사 유형과 개소수를 선택하세요. 같은 유형을 여러 행에서 선택하면 수량을 합산합니다. 미선택 행은 계산하지 않습니다.',wraplength=850).pack(anchor='w')
@@ -350,7 +373,7 @@ def open_rough_workspace(editor):
     track_type.trace_add('write',refresh_track_filters)
     refresh_track_filters()
     footer=ttk.Frame(win,padding=12);footer.pack(fill='x')
-    status=tk.StringVar(value='9개 공종 개략 산정 가능 | 건축: 역사 유형별 개소수 입력')
+    status=tk.StringVar(value='노반 정거장 표 Ⅲ-81 지원 · 개소수 수기 입력 · 기존 D5/시스템 동결')
     ttk.Label(footer,textvariable=status,wraplength=950).pack(anchor='w',pady=(0,8))
     def export():
         try:
@@ -376,6 +399,17 @@ def open_rough_workspace(editor):
                 if stations>0:comm_codes.append(f'COMM_ROUGH_{comm_key}_ST')
             if signal_code and not _eligible_for_track(signal_code,track_type.get()):
                 raise ValueError('신호 단가가 공통 선로형식과 일치하지 않습니다.')
+            station81_counts={}
+            for v,c in station81_entries:
+                code=lookup.get(v.get(),'')
+                if not code:continue
+                row=next(r for r in STATION81_RATES if r['code']==code)
+                if not station81_eligible(row,track_type.get()):raise ValueError('정거장 단가 선로형식이 일치하지 않습니다.')
+                try:n=Decimal(c.get().strip())
+                except Exception as exc:raise ValueError('정거장 개소수는 0 이상의 정수여야 합니다.') from exc
+                if not n.is_finite() or n<0 or n!=n.to_integral_value():raise ValueError('정거장 개소수는 0 이상의 정수여야 합니다.')
+                if n:station81_counts[code]=station81_counts.get(code,Decimal(0))+n
+            station81_records=estimate_station81(station81_counts,track_type.get())
             arch_counts={}
             for v,c in arch_entries:
                 code=lookup.get(v.get(),'')
@@ -386,7 +420,7 @@ def open_rough_workspace(editor):
                 if not n.is_finite() or n<0 or n!=n.to_integral_value():raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.')
                 if n:arch_counts[code]=arch_counts.get(code,Decimal(0))+n
             has_roadbed=any(chosen.values()) or bool(classify_tunnels(editor.segments)[1]);has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get() or bool(arch_counts)
-            if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
+            if not has_roadbed and not has_system and not station81_records:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
             if has_roadbed:
                 width,cut,fill=(float(v.get()) for v in editor.earthwork_vars)
@@ -462,6 +496,13 @@ def open_rough_workspace(editor):
                             for cells in src_ws.iter_rows():
                                 for cell in cells:
                                     dst_ws[cell.coordinate] = cell.value
+                if station81_records:
+                    if main is None:
+                        from openpyxl import Workbook
+                        main=Workbook()
+                        main.active.title='안내'
+                        main.active['A1']='정거장 노반 개략공사비 · 표 Ⅲ-81'
+                    add_station81_sheet(main,station81_records)
                 # A single openpyxl save writes directly to the selected path.
                 # No .rough_cost_* files are created at any stage.
                 main.save(path)
@@ -477,11 +518,11 @@ def open_rough_workspace(editor):
                     system_wb.close()
                 if buffer is not None:
                     buffer.close()
-            editor.log(f'개략 공사비 XLSX 저장(U7-LONGTUN1, 선로형식={track_type.get()}): {path}')
+            editor.log(f'개략 공사비 XLSX 저장(U9-STATION81, 선로형식={track_type.get()}): {path}')
             status.set('저장 완료 · 노반은 기존 D5 형식, 시스템은 독립 시트로 산정 · 미선택 공종은 미산정')
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U7)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U9)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
