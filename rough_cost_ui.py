@@ -46,6 +46,8 @@ def _eligible_for_track(code, track_type):
         return variant in {1: ('S_NON','S_E'), 2: ('D_NON',), 3: ('D_E','D_CITY')}[track_type]
     if code.startswith('SUB_ROUGH_'):
         return code.startswith('SUB_ROUGH_S_') if track_type == 1 else code.startswith('SUB_ROUGH_D_')
+    if code.startswith('ARCH_ROUGH_'):
+        return code.startswith({1:'ARCH_ROUGH_S_',2:'ARCH_ROUGH_D_',3:'ARCH_ROUGH_E_'}[track_type])
     if code.startswith('POWER_'):
         return code.startswith('POWER_S_') if track_type == 1 else code.startswith('POWER_D_')
     return True
@@ -76,7 +78,7 @@ def _source_catalog():
     extra=[r for r in json.loads(db_path.read_text(encoding='utf-8'))['items'] if r.get('group') in ('송전선로','변전설비') and r.get('method')=='ROUGH']
     return original+extra
 
-def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
+def _rough_system_rows(catalog, selected, lengths, tracks, stations=None, arch_counts=None):
     """Independent KDI rough-only records; never uses DETAIL rows."""
     lookup={r['code']:r for r in catalog}
     result=[]
@@ -105,6 +107,11 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
             km=lengths['전체']/Decimal(1000)
             expected=(select_transmission_band(km) if group=='송전선로' else select_substation_band(km,tracks))
             if code!=expected:raise ValueError(f'{group}: 노선연장 {km}km에 해당하는 KDI 구간 단가가 아닙니다: {code}')
+        elif group=='건축':
+            scope='정거장'
+            if arch_counts is None or code not in arch_counts:raise ValueError('건축 역사 개소수가 없습니다.')
+            q=arch_counts[code]
+            if q!=q.to_integral_value() or q<0:raise ValueError('건축 역사 개소수는 0 이상의 정수여야 합니다.')
         elif group=='신호':
             if not code.startswith(('SIG_S_GENERAL','SIG_D_GENERAL')):
                 raise ValueError('신호 개략단가만 지원합니다.')
@@ -127,7 +134,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
         price=Decimal(str(row['source_price_krw']))
         result.append({'group':group,'code':code,'name':row['name'], 'scope':scope,
                        'quantity':q,'unit':row['unit'],'unit_price':price,'amount':q*price,
-                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U5 개략] KDI 노선연장 {lengths["전체"]}m, 단계별 정액(중간값 미적용)' if scope=='노선연장 구간' else (f' | [U4 개략] 정거장 {stations}개소 (사용자 입력)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000'))})
+                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U6 개략] 건축 역사 유형별 {q}개소 (사용자 입력)' if group=='건축' else f' | [U5 개략] KDI 노선연장 {lengths["전체"]}m, 단계별 정액(중간값 미적용)' if scope=='노선연장 구간' else (f' | [U4 개략] 정거장 {stations}개소 (사용자 입력)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000'))})
     return result
 
 def _build_system_workbook(records,lengths,tracks):
@@ -155,15 +162,15 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U5-TRANS-SUB1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U6-ARCH1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[]
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[]
     track_type=tk.IntVar(value=1)
     track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
     def system_track_count():
         return 1 if track_type.get()==1 else 2
-    shared=ttk.LabelFrame(win,text='공통 선로형식 (노반·궤도·전차선·전력·신호·통신·변전설비 적용)',padding=6)
+    shared=ttk.LabelFrame(win,text='공통 선로형식 (노반·궤도·전차선·전력·신호·통신·변전설비·건축 적용)',padding=6)
     shared.pack(fill='x',padx=12,pady=(0,4))
     for label,value in (('단선',1),('복선',2),('복선전철',3)):
         ttk.Radiobutton(shared,text=label,variable=track_type,value=value).pack(side='left',padx=14)
@@ -233,8 +240,26 @@ def open_rough_workspace(editor):
             ttk.Label(line,text='정거장 개소수 (필수 · 0 이상의 정수):').pack(side='left')
             ttk.Entry(line,textvariable=station_count,width=12).pack(side='left',padx=8)
             ttk.Label(frame,text='정거장 개소수는 자동 추정하지 않습니다. 역이 0개인 경우 0을 입력하세요.').pack(anchor='w')
+        elif group=='건축':
+            ttk.Label(frame,text='KDI 표 Ⅲ-86 · 2019년 · 억원/개소 · 제비율 포함, VAT 제외 | 유형별 역사 개소수 입력',wraplength=850).pack(anchor='w',pady=6)
+            ttk.Label(frame,text='각 행에서 역사 유형과 개소수를 선택하세요. 같은 유형을 여러 행에서 선택하면 수량을 합산합니다. 미선택 행은 계산하지 않습니다.',wraplength=850).pack(anchor='w')
+            arch_rows=[r for r in catalog if r['group']=='건축' and r.get('method')=='ROUGH']
+            for i in range(12):
+                line=ttk.Frame(frame);line.pack(fill='x',pady=2)
+                ttk.Label(line,text=f'역사 {i+1:02d}',width=9).pack(side='left')
+                v=tk.StringVar();count=tk.StringVar(value='0')
+                choices=['미선택 (미산정)']
+                for item in arch_rows:
+                    label=f"{item['code']} | {item['spec']} | {item['condition']} | {int(item['source_price_krw']):,}원/{item['unit']}"
+                    choices.append(label);lookup[label]=item['code']
+                v.set(choices[0]);combo=ttk.Combobox(line,textvariable=v,values=choices,state='readonly',width=85)
+                combo.pack(side='left',fill='x',expand=True)
+                filtered_pickers.append((combo,v,choices))
+                ttk.Label(line,text='개소').pack(side='left',padx=5)
+                ttk.Entry(line,textvariable=count,width=6).pack(side='left')
+                arch_entries.append((v,count))
         else:
-            ttk.Label(frame,text='원문 개략 항목·수량 산정 방식 검증 후 다음 버전에서 활성화합니다. 현재 미산정입니다.').pack(anchor='w')
+            ttk.Label(frame,text='미산정').pack(anchor='w')
     def refresh_track_filters(*_):
         """Refresh every active trade, retain a valid selection, clear invalid ones."""
         kind=track_type.get()
@@ -249,7 +274,7 @@ def open_rough_workspace(editor):
     track_type.trace_add('write',refresh_track_filters)
     refresh_track_filters()
     footer=ttk.Frame(win,padding=12);footer.pack(fill='x')
-    status=tk.StringVar(value='노반·궤도·전력·전차선·신호·통신·송전선로·변전설비 산정 가능 | 건축 미산정')
+    status=tk.StringVar(value='9개 공종 개략 산정 가능 | 건축: 역사 유형별 개소수 입력')
     ttk.Label(footer,textvariable=status,wraplength=950).pack(anchor='w',pady=(0,8))
     def export():
         try:
@@ -275,7 +300,16 @@ def open_rough_workspace(editor):
                 if stations>0:comm_codes.append(f'COMM_ROUGH_{comm_key}_ST')
             if signal_code and not _eligible_for_track(signal_code,track_type.get()):
                 raise ValueError('신호 단가가 공통 선로형식과 일치하지 않습니다.')
-            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get()
+            arch_counts={}
+            for v,c in arch_entries:
+                code=lookup.get(v.get(),'')
+                if not code:continue
+                if not _eligible_for_track(code,track_type.get()):raise ValueError('건축 단가가 공통 선로형식과 일치하지 않습니다.')
+                try:n=Decimal(c.get().strip())
+                except Exception as exc:raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.') from exc
+                if not n.is_finite() or n<0 or n!=n.to_integral_value():raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.')
+                if n:arch_counts[code]=arch_counts.get(code,Decimal(0))+n
+            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get() or bool(arch_counts)
             if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
             if has_roadbed:
@@ -297,6 +331,8 @@ def open_rough_workspace(editor):
                 if sub_enabled.get():
                     km=lengths['전체']/Decimal(1000)
                     system_records+=_rough_system_rows(catalog,{'변전설비':select_substation_band(km,system_track_count())},lengths,system_track_count())
+                for arch_code,arch_qty in arch_counts.items():
+                    system_records+=_rough_system_rows(catalog,{'건축':arch_code},lengths,system_track_count(),arch_counts=arch_counts)
                 if signal_code:
                     system_records+=_rough_system_rows(catalog,{'신호':signal_code},lengths,system_track_count())
                 for comm_code in comm_codes:
