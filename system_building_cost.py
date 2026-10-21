@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal,InvalidOperation,ROUND_HALF_UP
 from pathlib import Path
 import json
+import re
 
 GROUPS=('궤도','전력','전차선','신호','통신','건축','기계설비')
 SCHEMA='railway-system-building-s1'
@@ -33,8 +34,15 @@ def validate(items):
         if item.group not in GROUPS:raise ValueError(f'{n}행: 잘못된 공종')
         name=item.name.strip();unit=item.unit.strip()
         if not name or not unit:raise ValueError(f'{n}행: 항목명·단위는 필수입니다.')
-        key=(item.group,name.casefold())
-        if key in seen:raise ValueError(f'{n}행: 공종 내 항목명 중복: {name}')
+        # KDI items are identified by the original catalog code, not by the
+        # human-readable name: EARTH / BRIDGE / TUNNEL share a source name.
+        match=re.search(r'KDI 단가 DB 선택:\s*([A-Za-z0-9_]+)',item.basis)
+        if match:
+            key=(item.group,'kdi',match.group(1).upper())
+            if key in seen:raise ValueError(f'{n}행: 동일 KDI 단가 코드 중복: {match.group(1)}')
+        else:
+            key=(item.group,'manual',name.casefold())
+            if key in seen:raise ValueError(f'{n}행: 공종 내 항목명 중복: {name}')
         seen.add(key)
         q=number(item.quantity,'수량',positive=True)
         price=number(item.unit_price,'단가')

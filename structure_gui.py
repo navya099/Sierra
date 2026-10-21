@@ -790,7 +790,7 @@ class StructureEditor(ttk.Frame):
     def open_system_building_cost_dialog(self):
         """S1 isolated manual quantity/price ledger; P1 remains unchanged."""
         from system_building_cost import GROUPS,Item,number,amount,validate,summary,save_json,load_json,export_xlsx
-        win=tk.Toplevel(self);win.title('v12.8-S2.3 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
+        win=tk.Toplevel(self);win.title('v12.8-S2.3-HF2 궤도·시스템·건축 공사비');win.geometry('1120x660');win.transient(self.winfo_toplevel())
         ttk.Label(win,text='신규 공종별 수량 × 사용자 입력 단가(원). 항목이 없는 공종은 미산정입니다. D5/P1과 별도 관리.',padding=9).pack(anchor='w')
         cols=('공종','항목명','수량','단위','단가(원)','금액(원)','산정 근거','비고')
         tree=ttk.Treeview(win,columns=cols,show='headings',height=12)
@@ -954,7 +954,7 @@ class StructureEditor(ttk.Frame):
                     ar=area.get() if row['unit']=='m²' else None
                     q,detail=system_quantity(row,lengths,n,stations=st,area=ar,scope=scope.get())
                     import re
-                    original=re.sub(r'\\s*\\| \\[S2\\.3 수량\\][^|]*','',vars[5].get())
+                    original=re.sub(r'\s*\| \[S2\.3 수량\][^|]*','',vars[5].get())
                     vars[2].set(str(q))
                     vars[5].set(original+f' | [S2.3 수량] {detail} = {q} {row["unit"]}')
                     pop.destroy()
@@ -962,6 +962,62 @@ class StructureEditor(ttk.Frame):
                 except (ValueError,TypeError,ArithmeticError) as exc:
                     messagebox.showerror('수량 산정 오류',str(exc),parent=pop)
             ttk.Button(pop,text='선택 단가에 수량 적용',command=apply_system).pack(pady=12)
+        def batch_section_link():
+            from system_quantity_link import selected_price,matching_section_prices,batch_section_quantities
+            from system_kdi_link import load_eligible_catalog,provenance
+            from track_length_link import segment_lengths
+            from pathlib import Path
+            try:
+                catalog=load_eligible_catalog(Path(__file__).with_name('kdi_general_rail_2019.json'))
+                row=selected_price(vars[5].get(),selected_kdi['row'],catalog)
+                if row['group'] not in ('전력','전차선'):
+                    raise ValueError('구간별 일괄 산정은 전력(개략)·전차선(세부) 전용입니다.')
+                if vars[0].get()!=row['group'] or vars[3].get()!=row['unit'] or str(vars[4].get()).replace(',','')!=str(row['source_price_krw']):
+                    raise ValueError('선택한 KDI 단가와 현재 입력란의 공종·단위·단가가 다릅니다.')
+                choices=matching_section_prices(row,catalog)
+                source,alignment=self.get_context()
+                if not source or alignment is None:raise ValueError('먼저 종단 DXF와 선형 계산을 완료하세요.')
+                lengths=segment_lengths(alignment.vips,self.segments)
+            except (ValueError,TypeError,AttributeError) as exc:
+                messagebox.showerror('구간별 수량 연동',str(exc),parent=win);return
+            pop=tk.Toplevel(win);pop.title('S2.3-HF1 개략·세부 구간별 산정');pop.geometry('780x460');pop.transient(win);pop.grab_set()
+            ttk.Label(pop,text=f'{row["group"]} / {row.get("method")} / 선택 기준: {row["code"]}',padding=10).pack(anchor='w')
+            ttk.Label(pop,text='구간마다 원문 단가가 다른 경우 별도 내역으로 생성합니다. 가격이 없는 구간은 자동 산정하지 않습니다.',wraplength=730,padding=6).pack(anchor='w')
+            counts=tk.StringVar(value='1' if '_S_' in row['code'] or row['code'].startswith('POWER_S_') else '2')
+            bar=ttk.Frame(pop,padding=7);bar.pack(anchor='w')
+            ttk.Label(bar,text='선로 수').pack(side='left')
+            ttk.Combobox(bar,textvariable=counts,values=('1','2'),width=7,state='readonly').pack(side='left',padx=8)
+            checked={}
+            for scope,price in choices.items():
+                line=ttk.Frame(pop,padding=6);line.pack(fill='x')
+                enabled=price is not None and lengths.get(scope,0)>0
+                checked[scope]=tk.BooleanVar(value=False)
+                ttk.Checkbutton(line,text=scope,variable=checked[scope],state='normal' if enabled else 'disabled').pack(side='left')
+                description=(f'{lengths.get(scope,0):,.3f}m / {price["source_price_krw"]:,}원/km / {price["code"]}'
+                             if price is not None else f'{lengths.get(scope,0):,.3f}m / 검증된 단가 없음 (미산정)')
+                ttk.Label(line,text=description).pack(side='left',padx=12)
+            def commit_batch():
+                try:
+                    scopes=[scope for scope,v in checked.items() if v.get()]
+                    rows=batch_section_quantities(row,catalog,lengths,int(counts.get()),scopes)
+                    from system_building_cost import Item,amount,validate
+                    from decimal import Decimal
+                    current=read_all()
+                    added=[]
+                    for scope,price,q,basis in rows:
+                        name=f'{price["name"]} - {price.get("spec","")} [{scope} / {price["code"]}]'
+                        provenance_text=provenance(price,'kdi_general_rail_2019.json').replace(' | 수량 근거 별도 확인 필요','')
+                        added.append(Item(price['group'],name,q,price['unit'],Decimal(price['source_price_krw']),
+                                          provenance_text+f' | [S2.3-HF1 {price.get("method")}] {basis} = {q} {price["unit"]}',
+                                          f'구간별 산정 / {scope}'))
+                    validate(current+added)  # all-or-nothing; includes duplicate item protection
+                    for i in added:
+                        tree.insert('','end',values=(i.group,i.name,str(i.quantity),i.unit,str(i.unit_price),str(amount(i)),i.basis,i.note))
+                    clear();refresh();pop.destroy()
+                    messagebox.showinfo('구간별 산정 완료',f'{len(added)}개 구간별 내역을 추가했습니다. JSON/XLSX 저장 전에 내역을 확인하세요.',parent=win)
+                except (ValueError,TypeError,ArithmeticError) as exc:
+                    messagebox.showerror('구간별 산정 오류',str(exc),parent=pop)
+            ttk.Button(pop,text='선택 구간별 내역 일괄 추가',command=commit_batch).pack(pady=14)
         buttons=ttk.Frame(win,padding=7);buttons.pack(fill='x')
         ttk.Button(buttons,text='추가 / 선택 행 수정',command=apply).pack(side='left',padx=3)
         ttk.Button(buttons,text='선택 삭제',command=delete).pack(side='left',padx=3)
@@ -969,6 +1025,8 @@ class StructureEditor(ttk.Frame):
         ttk.Button(buttons,text='통합 KDI 단가 선택 (S2.2.1)',command=choose_kdi_price).pack(side='left',padx=3)
         ttk.Button(buttons,text='궤도연장 자동 연동 (S2.1.1)',command=link_track_length).pack(side='left',padx=3)
         ttk.Button(buttons,text='시스템·건축 수량 연동 (S2.3)',command=link_system_quantity).pack(side='left',padx=3)
+        batch_bar=ttk.Frame(win,padding=(7,0));batch_bar.pack(fill='x')
+        ttk.Button(batch_bar,text='전력·전차선 구간별 일괄 산정 (HF1)',command=batch_section_link).pack(side='left',padx=3)
         ttk.Label(win,textvariable=status,padding=8,wraplength=1080).pack(anchor='w')
         def save():
             try:
