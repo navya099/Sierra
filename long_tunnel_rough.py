@@ -44,11 +44,25 @@ def estimate_long_tunnels(segments, track_type, inputs):
         if key not in inputs: raise ValueError(f'초장대터널 {idx}: 경사갱·방재설비 조건을 입력하세요.')
         cfg=inputs[key]
         km=(_decimal(seg.end_sta,'터널 종점')-_decimal(seg.start_sta,'터널 시점'))/Decimal(1000)
-        shaft_km=_decimal(cfg.get('shaft_length_km',''),f'초장대터널 {idx} 경사갱 1개소 연장')
-        count=_decimal(cfg.get('shaft_count',''),f'초장대터널 {idx} 경사갱 개소수')
+        mode=cfg.get('shaft_mode','simple')
+        if mode=='individual':
+            lengths=cfg.get('shaft_lengths_km',[])
+            shaft_values=[_decimal(v,f'초장대터널 {idx} 경사갱 {j} 연장') for j,v in enumerate(lengths,1)]
+            if any(v<=0 for v in shaft_values):raise ValueError(f'초장대터널 {idx}: 개별 경사갱 연장은 0보다 커야 합니다.')
+            shaft_total=sum(shaft_values,Decimal(0))
+            count=Decimal(len(shaft_values))
+            shaft_label=f'{int(count)}개소 · 합계 {shaft_total}km'
+            shaft_detail=' / 개별 경사갱 '+', '.join(f'{v}km' for v in shaft_values)+' (사용자 입력)'
+        elif mode=='simple':
+            shaft_km=_decimal(cfg.get('shaft_length_km',''),f'초장대터널 {idx} 경사갱 1개소 연장')
+            count=_decimal(cfg.get('shaft_count',''),f'초장대터널 {idx} 경사갱 개소수')
+            if shaft_km<0 or count<0 or count!=count.to_integral_value():raise ValueError(f'초장대터널 {idx}: 경사갱 연장은 0 이상, 개소수는 0 이상의 정수여야 합니다.')
+            if count>0 and shaft_km<=0:raise ValueError(f'초장대터널 {idx}: 경사갱이 있으면 1개소 연장을 입력하세요.')
+            shaft_total=shaft_km*count
+            shaft_label=f'1개소 {shaft_km}km × {int(count)}개소'
+            shaft_detail=f' / 경사갱 {shaft_km}km/개소 × {int(count)}개소 (사용자 입력)'
+        else:raise ValueError(f'초장대터널 {idx}: 알 수 없는 경사갱 입력 방식')
         fire=_decimal(cfg.get('fire_percent',''),f'초장대터널 {idx} 방재설비 비율')
-        if shaft_km<0 or count<0 or count!=count.to_integral_value():raise ValueError(f'초장대터널 {idx}: 경사갱 연장은 0 이상, 개소수는 0 이상의 정수여야 합니다.')
-        if count>0 and shaft_km<=0:raise ValueError(f'초장대터널 {idx}: 경사갱이 있으면 1개소 연장을 입력하세요.')
         if not Decimal('1.0')<=fire<=Decimal('1.5'):raise ValueError(f'초장대터널 {idx}: 방재설비 비율은 KDI 1.0~1.5% 범위여야 합니다.')
         label=seg.name.strip() if getattr(seg,'name','') else f'T{idx}'
         basis=f'KDI 2019 표 Ⅲ-77 / 보고서 p.110 / {label} STA {seg.start_sta:g}~{seg.end_sta:g}m / 본선 {km}km / 제비율 포함·VAT 제외'
@@ -58,7 +72,7 @@ def estimate_long_tunnels(segments, track_type, inputs):
         # Retain all three independent cost components for auditability.
         rows.extend([
             CostRow('터널','TUNNEL_LONG_MAIN_S' if track_type==1 else 'TUNNEL_LONG_MAIN_D',f'{label} 초장대터널 본선',float(km),'km',float(main_price),float(main),basis+' / 본선'),
-            CostRow('터널','TUNNEL_LONG_SHAFT',f'{label} 경사갱 (1개소 {shaft_km}km × {int(count)}개소)',float(shaft_km*count),'km',float(shaft_price),float(shaft_km*count*shaft_price),basis+f' / 경사갱 {shaft_km}km/개소 × {int(count)}개소 (사용자 입력)'),
+            CostRow('터널','TUNNEL_LONG_SHAFT',f'{label} 경사갱 ({shaft_label})',float(shaft_total),'km',float(shaft_price),float(shaft_total*shaft_price),basis+shaft_detail),
             CostRow('터널','TUNNEL_LONG_FIRE',f'{label} 방재설비 (본선비 {fire}%)',float(main),'원',float(fire/100),float(main*fire/100),basis+f' / 본선비 × {fire}% (사용자 입력)')
         ])
     return rows

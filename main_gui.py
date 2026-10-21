@@ -117,7 +117,7 @@ class AlignmentGUI:
         menu.add_cascade(label='도구', menu=tools)
         help_menu = tk.Menu(menu, tearoff=False)
         help_menu.add_command(label='사용자 매뉴얼', command=self.show_manual)
-        help_menu.add_command(label='프로그램 정보', command=lambda: messagebox.showinfo('프로그램 정보', '종단선형 설계 GUI v1.0\nU7-LONGTUN1-UI1\nDXF 기반 독립형 종단 분석'))
+        help_menu.add_command(label='프로그램 정보', command=lambda: messagebox.showinfo('프로그램 정보', '종단선형 설계 GUI v1.0\nv12.8-S2.5-U8-LONGTUN2\nDXF 기반 독립형 종단 분석'))
         menu.add_cascade(label='도움말', menu=help_menu)
         self.root.config(menu=menu)
 

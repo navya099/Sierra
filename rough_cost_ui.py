@@ -163,7 +163,7 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U7-LONGTUN1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U8-LONGTUN2 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];long_tunnel_entries={}
@@ -206,39 +206,70 @@ def open_rough_workspace(editor):
                 old=dict(long_tunnel_entries);long_tunnel_entries.clear()
                 if not longs:
                     ttk.Label(long_frame,text='현재 10km 이상 개별 터널이 없습니다.').pack(anchor='w')
+                def build_panel(idx,seg):
+                        key=segment_key(seg)
+                        prior=old.get(key)
+                        if prior:
+                            state=prior
+                        else:
+                            state={'mode':tk.StringVar(value='simple'),'length':tk.StringVar(value=''),
+                                   'count':tk.StringVar(value=''),'fire':tk.StringVar(value=''),
+                                   'shafts':[]}
+                        long_tunnel_entries[key]=state
+                        item=ttk.LabelFrame(long_frame,text=f'{seg.name or "터널 "+str(idx)} · STA {seg.start_sta:.1f}~{seg.end_sta:.1f}m · 본선 {seg.length/1000:.3f}km',padding=8)
+                        item.pack(fill='x',pady=5)
+                        selector=ttk.Frame(item);selector.pack(anchor='w',fill='x',pady=(0,5))
+                        ttk.Label(selector,text='경사갱 입력 방식').pack(side='left',padx=(0,12))
+                        ttk.Radiobutton(selector,text='간편 입력',variable=state['mode'],value='simple').pack(side='left',padx=(0,12))
+                        ttk.Radiobutton(selector,text='경사갱별 입력',variable=state['mode'],value='individual').pack(side='left')
+                        mode_frame=ttk.Frame(item);mode_frame.pack(fill='x')
+                        total_var=tk.StringVar(value='경사갱 총연장: 입력 대기')
+                        def render_mode(st=state,container=mode_frame,output=total_var):
+                            for child in container.winfo_children():child.destroy()
+                            def update_total(*_args):
+                                try:
+                                    if st['mode'].get()=='simple':
+                                        length=Decimal(st['length'].get().strip());count=Decimal(st['count'].get().strip())
+                                        if not length.is_finite() or not count.is_finite() or length<0 or count<0 or count!=count.to_integral_value():raise ValueError
+                                        output.set(f'경사갱 총연장: {length*count:g}km = {length:g}km × {int(count)}개소')
+                                    else:
+                                        values=[Decimal(v.get().strip()) for v in st['shafts']]
+                                        if any(not x.is_finite() or x<=0 for x in values):raise ValueError
+                                        output.set(f'경사갱 총연장: {sum(values,Decimal(0)):g}km ({len(values)}개소)')
+                                except Exception:
+                                    output.set('경사갱 총연장: 연장을 입력하세요')
+                            if st['mode'].get()=='simple':
+                                for col,(label,var,width) in enumerate((('경사갱 1개소당 연장 (km)',st['length'],16),('경사갱 개소수 (개소)',st['count'],12))):
+                                    field=ttk.Frame(container);field.grid(row=0,column=col,sticky='w',padx=(0,22))
+                                    ttk.Label(field,text=label).pack(anchor='w',pady=(0,3))
+                                    ttk.Entry(field,textvariable=var,width=width).pack(anchor='w')
+                            else:
+                                for i,var in enumerate(st['shafts']):
+                                    row=ttk.Frame(container);row.pack(anchor='w',pady=2)
+                                    ttk.Label(row,text=f'경사갱 {i+1} 연장 (km)',width=22).pack(side='left')
+                                    ttk.Entry(row,textvariable=var,width=15).pack(side='left',padx=5)
+                                    ttk.Button(row,text='삭제',command=lambda index=i:remove_shaft(index)).pack(side='left')
+                                ttk.Button(container,text='+ 경사갱 추가',command=lambda:add_shaft()).pack(anchor='w',pady=4)
+                            update_total()
+                            st['_update_total']=update_total
+                        def add_shaft(st=state):
+                            st['shafts'].append(tk.StringVar(value=''))
+                            st['shafts'][-1].trace_add('write',lambda *_:st['_update_total']())
+                            render_mode()
+                        def remove_shaft(index,st=state):
+                            st['shafts'].pop(index)
+                            render_mode()
+                        state['mode'].trace_add('write',lambda *_:render_mode())
+                        for var in (state['length'],state['count']):
+                            var.trace_add('write',lambda *_,st=state:st['_update_total']())
+                        render_mode()
+                        fire_frame=ttk.Frame(item);fire_frame.pack(anchor='w',pady=(7,0))
+                        ttk.Label(fire_frame,text='방재설비 적용 비율 (%)').pack(anchor='w',pady=(0,3))
+                        ttk.Entry(fire_frame,textvariable=state['fire'],width=15).pack(anchor='w')
+                        ttk.Label(item,textvariable=total_var,foreground='#555555').pack(anchor='w',pady=(7,0))
+                        ttk.Label(item,text='방재설비는 본선 공사비의 1.0~1.5%를 적용합니다.',foreground='#555555').pack(anchor='w',pady=(2,0))
                 for idx,seg in enumerate(longs,1):
-                    key=segment_key(seg)
-                    prior=old.get(key)
-                    variables=prior if prior else (tk.StringVar(value=''),tk.StringVar(value=''),tk.StringVar(value=''))
-                    long_tunnel_entries[key]=variables
-                    item=ttk.LabelFrame(long_frame,text=f'{seg.name or "터널 "+str(idx)} · STA {seg.start_sta:.1f}~{seg.end_sta:.1f}m · 본선 {seg.length/1000:.3f}km',padding=8)
-                    item.pack(fill='x',pady=5)
-                    fields=ttk.Frame(item)
-                    fields.pack(anchor='w',fill='x')
-                    for col,(label,var,width) in enumerate((
-                        ('경사갱 1개소당 연장 (km)',variables[0],13),
-                        ('경사갱 개소수 (개소)',variables[1],11),
-                        ('방재설비 적용 비율 (%)',variables[2],12),
-                    )):
-                        field=ttk.Frame(fields)
-                        field.grid(row=0,column=col,sticky='w',padx=(0,22))
-                        ttk.Label(field,text=label).pack(anchor='w',pady=(0,3))
-                        ttk.Entry(field,textvariable=var,width=width).pack(anchor='w')
-                    total_var=tk.StringVar(value='경사갱 총연장: 입력 대기')
-                    def update_total(*_args, vs=variables, output=total_var):
-                        try:
-                            length=Decimal(vs[0].get().strip())
-                            count=Decimal(vs[1].get().strip())
-                            if not length.is_finite() or not count.is_finite() or length<0 or count<0 or count!=count.to_integral_value():
-                                raise ValueError
-                            output.set(f'경사갱 총연장: {length * count:g}km = {length:g}km × {int(count)}개소')
-                        except Exception:
-                            output.set('경사갱 총연장: 연장과 개소수를 입력하세요')
-                    for var in variables[:2]:
-                        var.trace_add('write',update_total)
-                    update_total()
-                    ttk.Label(item,textvariable=total_var,foreground='#555555').pack(anchor='w',pady=(7,0))
-                    ttk.Label(item,text='방재설비는 본선 공사비의 1.0~1.5%를 적용합니다.',foreground='#555555').pack(anchor='w',pady=(2,0))
+                    build_panel(idx,seg)
             ttk.Button(frame,text='구조물 목록에서 초장대터널 갱신',command=refresh_long_tunnels).pack(anchor='w',pady=3)
             refresh_long_tunnels()
         elif group in ('궤도','전력','전차선'):
@@ -375,7 +406,7 @@ def open_rough_workspace(editor):
                             rows.extend(r for r in ordinary_rows if r.group=='터널')
                         else:
                             review.append(('터널',f'10km 미만 일반터널 {sum(s.length for s in ordinary_tunnels)/1000:.6f}km 단가 미선택'))
-                    settings={key:{'shaft_length_km':vars[0].get(),'shaft_count':vars[1].get(),'fire_percent':vars[2].get()} for key,vars in long_tunnel_entries.items()}
+                    settings={key:({'shaft_mode':'individual','shaft_lengths_km':[v.get() for v in st['shafts']],'fire_percent':st['fire'].get()} if st['mode'].get()=='individual' else {'shaft_mode':'simple','shaft_length_km':st['length'].get(),'shaft_count':st['count'].get(),'fire_percent':st['fire'].get()}) for key,st in long_tunnel_entries.items()}
                     rows.extend(estimate_long_tunnels(long_tunnels,track_type.get(),settings))
             system_records=[];lengths=None
             if has_system:
