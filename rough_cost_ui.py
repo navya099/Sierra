@@ -66,7 +66,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks):
                 raise ValueError(f'{code}: 단선/복선 선택이 단가 조건과 다릅니다.')
             q=lengths[scope]/Decimal(1000)
         elif group=='전력':
-            scope='터널' if code.endswith('_TUN') else '토공'
+            scope='터널' if code.endswith('_TUN') else ('교량' if code.endswith('_BRIDGE') else '토공')
             expected=1 if code.startswith('POWER_S_') else 2
             if tracks!=expected:raise ValueError(f'{code}: 선택한 단선/복선 조건과 선로 수가 다릅니다.')
             q=lengths[scope]/Decimal(1000)
@@ -103,7 +103,7 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U3-CAT1-HF2 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U3-POWER-BRIDGE1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};filtered_pickers=[]
@@ -151,12 +151,12 @@ def open_rough_workspace(editor):
                     v=tk.StringVar();cat_vars[scope]=v
                     picker(frame,group,[r for r in rows if r['code'].endswith(suffix)],v)
             else:
-                ttk.Label(frame,text='토공과 터널은 각각 원문 개략 단가를 선택합니다. 교량 별도 단가는 원문 DB에 없으므로 미산정으로 표시합니다.',wraplength=870).pack(anchor='w',pady=8)
-                for scope in ('토공','터널'):
+                ttk.Label(frame,text='KDI 표 Ⅲ-96 · 토공·교량·터널 각각 별도 단가 선택 (교량 단가는 원문에 독립된 행으로 수록).',wraplength=870).pack(anchor='w',pady=8)
+                for scope in ('토공','교량','터널'):
                     ttk.Label(frame,text=scope+' 단가').pack(anchor='w',pady=(8,0))
                     v=tk.StringVar();power_vars[scope]=v
-                    picker(frame,group,[r for r in rows if (r['code'].endswith('_TUN'))==(scope=='터널')],v)
-                ttk.Label(frame,text='전력의 토공·터널은 각각 별도 산정하고, 구조물 연장 중복 적용을 방지합니다.').pack(anchor='w',pady=10)
+                    picker(frame,group,[r for r in rows if (r['code'].endswith('_TUN') if scope=='터널' else r['code'].endswith('_BRIDGE') if scope=='교량' else not r['code'].endswith(('_TUN','_BRIDGE')))],v)
+                ttk.Label(frame,text='전력의 토공·교량·터널은 각각 별도 산정하며, 구간별 연장을 중복 적용하지 않습니다.').pack(anchor='w',pady=10)
         else:
             ttk.Label(frame,text='원문 개략 항목·수량 산정 방식 검증 후 다음 버전에서 활성화합니다. 현재 미산정입니다.').pack(anchor='w')
     def refresh_track_filters(*_):
