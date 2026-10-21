@@ -206,7 +206,7 @@ class AlignmentGUI:
         ttk.Button(cost_panel, text='KDI 단가 관리...',
                    command=self.structure_editor.open_unit_price_manager,
                    width=30).grid(row=0, column=0, padx=8, pady=8, sticky='ew')
-        ttk.Button(cost_panel, text='개략 공사비 XLSX...',
+        ttk.Button(cost_panel, text='개략 공사비 계산...',
                    command=self.structure_editor.open_cost_estimate_dialog,
                    width=30).grid(row=0, column=1, padx=8, pady=8, sticky='ew')
         ttk.Button(cost_panel, text='세부 공사비 XLSX... (수량 연동/직접입력)',
