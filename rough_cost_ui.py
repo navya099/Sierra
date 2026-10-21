@@ -44,12 +44,37 @@ def _eligible_for_track(code, track_type):
     if code.startswith('COMM_ROUGH_'):
         variant=code[len('COMM_ROUGH_'):].rsplit('_',1)[0]
         return variant in {1: ('S_NON','S_E'), 2: ('D_NON',), 3: ('D_E','D_CITY')}[track_type]
+    if code.startswith('SUB_ROUGH_'):
+        return code.startswith('SUB_ROUGH_S_') if track_type == 1 else code.startswith('SUB_ROUGH_D_')
     if code.startswith('POWER_'):
         return code.startswith('POWER_S_') if track_type == 1 else code.startswith('POWER_D_')
     return True
 
+def select_transmission_band(km):
+    """KDI III-90 fixed cost; distance bins (0,10], (10,60], ... (160,170]."""
+    if not km.is_finite() or km <= 0:
+        raise ValueError('송전선로: 노선연장은 0km보다 커야 합니다.')
+    for maximum in (10,60,110,160,170):
+        if km <= maximum:
+            return f'TRANS_ROUGH_LE{maximum}'
+    raise ValueError('송전선로: 170km 초과 노선은 표 Ⅲ-90 적용 범위 밖입니다. 별도 검토가 필요합니다.')
+
+def select_substation_band(km, tracks):
+    """KDI III-92 literal ±5km bins; do not interpolate or extrapolate."""
+    if not km.is_finite() or km <= 0:
+        raise ValueError('변전설비: 노선연장은 0km보다 커야 합니다.')
+    # 5km and 10km share an endpoint at 5km; exact 5km uses the 5km row.
+    for center in (5,10,20,30,40,50,60,70,80,90,100,110,120,150):
+        if abs(km-Decimal(center)) <= Decimal(5):
+            return f'SUB_ROUGH_{"S" if tracks==1 else "D"}_{center}'
+    raise ValueError(f'변전설비: {km}km는 표 Ⅲ-92의 제시 연장구간 밖입니다. 임의 보간하지 않습니다.')
+
 def _source_catalog():
-    return load_eligible_catalog(Path(__file__).with_name('kdi_general_rail_2019.json'))
+    import json
+    db_path=Path(__file__).with_name('kdi_general_rail_2019.json')
+    original=load_eligible_catalog(db_path)
+    extra=[r for r in json.loads(db_path.read_text(encoding='utf-8'))['items'] if r.get('group') in ('송전선로','변전설비') and r.get('method')=='ROUGH']
+    return original+extra
 
 def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
     """Independent KDI rough-only records; never uses DETAIL rows."""
@@ -60,7 +85,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
         row=lookup.get(code)
         if row is None or row['group']!=group or row.get('method')!='ROUGH':
             raise ValueError(f'{group}: 개략 단가가 아닙니다: {code}')
-        if row['unit'] not in ('km','개소(역)'):raise ValueError(f'{code}: 지원하지 않는 개략 단위입니다.')
+        if row['unit'] not in ('km','개소(역)','식'):raise ValueError(f'{code}: 지원하지 않는 개략 단위입니다.')
         if group=='궤도':
             q=quantity_for_price(row,lengths,tracks,'전체')
             scope='전체'
@@ -75,6 +100,11 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
             expected=1 if code.startswith('POWER_S_') else 2
             if tracks!=expected:raise ValueError(f'{code}: 선택한 단선/복선 조건과 선로 수가 다릅니다.')
             q=lengths[scope]/Decimal(1000)
+        elif group in ('송전선로','변전설비'):
+            scope='노선연장 구간';q=Decimal(1)
+            km=lengths['전체']/Decimal(1000)
+            expected=(select_transmission_band(km) if group=='송전선로' else select_substation_band(km,tracks))
+            if code!=expected:raise ValueError(f'{group}: 노선연장 {km}km에 해당하는 KDI 구간 단가가 아닙니다: {code}')
         elif group=='신호':
             if not code.startswith(('SIG_S_GENERAL','SIG_D_GENERAL')):
                 raise ValueError('신호 개략단가만 지원합니다.')
@@ -97,7 +127,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None):
         price=Decimal(str(row['source_price_krw']))
         result.append({'group':group,'code':code,'name':row['name'], 'scope':scope,
                        'quantity':q,'unit':row['unit'],'unit_price':price,'amount':q*price,
-                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U4 개략] 정거장 {stations}개소 (사용자 입력)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000')})
+                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U5 개략] KDI 노선연장 {lengths["전체"]}m, 단계별 정액(중간값 미적용)' if scope=='노선연장 구간' else (f' | [U4 개략] 정거장 {stations}개소 (사용자 입력)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000'))})
     return result
 
 def _build_system_workbook(records,lengths,tracks):
@@ -125,15 +155,15 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U4-SIGCOMM1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U5-TRANS-SUB1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[]
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[]
     track_type=tk.IntVar(value=1)
     track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
     def system_track_count():
         return 1 if track_type.get()==1 else 2
-    shared=ttk.LabelFrame(win,text='공통 선로형식 (노반·궤도·전차선·전력·신호·통신 적용)',padding=6)
+    shared=ttk.LabelFrame(win,text='공통 선로형식 (노반·궤도·전차선·전력·신호·통신·변전설비 적용)',padding=6)
     shared.pack(fill='x',padx=12,pady=(0,4))
     for label,value in (('단선',1),('복선',2),('복선전철',3)):
         ttk.Radiobutton(shared,text=label,variable=track_type,value=value).pack(side='left',padx=14)
@@ -179,6 +209,11 @@ def open_rough_workspace(editor):
                     v=tk.StringVar();power_vars[scope]=v
                     picker(frame,group,[r for r in rows if (r['code'].endswith('_TUN') if scope=='터널' else r['code'].endswith('_BRIDGE') if scope=='교량' else not r['code'].endswith(('_TUN','_BRIDGE')))],v)
                 ttk.Label(frame,text='전력의 토공·교량·터널은 각각 별도 산정하며, 구간별 연장을 중복 적용하지 않습니다.').pack(anchor='w',pady=10)
+        elif group in ('송전선로','변전설비'):
+            enabled=trans_enabled if group=='송전선로' else sub_enabled
+            ttk.Checkbutton(frame,text=f'{group} 개략 공사비 자동 산정',variable=enabled).pack(anchor='w',pady=8)
+            ttk.Label(frame,text=('KDI 표 Ⅲ-90 · 전체 노선연장별 정액, 단복선 동일 · 170km 이내' if group=='송전선로' else 'KDI 표 Ⅲ-92 · 노선연장 ±5km 단계별 정액, 단선·복선 구분'),wraplength=850).pack(anchor='w')
+            ttk.Label(frame,text='중간값 보간 없음 · 선형 연장으로 자동 단가 선택 · 해당 구간이 없으면 저장 전 오류 표시',wraplength=850).pack(anchor='w',pady=8)
         elif group=='신호':
             ttk.Label(frame,text='KDI 표 Ⅲ-97 · 신설선 차상신호방식 개략 단가 × 전체 노선연장(km)',wraplength=870).pack(anchor='w',pady=8)
             ttk.Label(frame,text='개량사업 1.78배는 자동 적용하지 않습니다. 신설선 기준입니다.',wraplength=870).pack(anchor='w')
@@ -214,7 +249,7 @@ def open_rough_workspace(editor):
     track_type.trace_add('write',refresh_track_filters)
     refresh_track_filters()
     footer=ttk.Frame(win,padding=12);footer.pack(fill='x')
-    status=tk.StringVar(value='노반·궤도·전력·전차선·신호·통신 개략 선택 가능 | 나머지 공종 미산정')
+    status=tk.StringVar(value='노반·궤도·전력·전차선·신호·통신·송전선로·변전설비 산정 가능 | 건축 미산정')
     ttk.Label(footer,textvariable=status,wraplength=950).pack(anchor='w',pady=(0,8))
     def export():
         try:
@@ -240,7 +275,7 @@ def open_rough_workspace(editor):
                 if stations>0:comm_codes.append(f'COMM_ROUGH_{comm_key}_ST')
             if signal_code and not _eligible_for_track(signal_code,track_type.get()):
                 raise ValueError('신호 단가가 공통 선로형식과 일치하지 않습니다.')
-            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes)
+            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get()
             if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
             if has_roadbed:
@@ -256,6 +291,12 @@ def open_rough_workspace(editor):
                     if code:selections_to_calc['전력_'+scope]=code
                 for scope,code in cat_chosen.items():
                     if code:system_records+=_rough_system_rows(catalog,{'전차선':code},lengths,system_track_count())
+                if trans_enabled.get():
+                    km=lengths['전체']/Decimal(1000)
+                    system_records+=_rough_system_rows(catalog,{'송전선로':select_transmission_band(km)},lengths,system_track_count())
+                if sub_enabled.get():
+                    km=lengths['전체']/Decimal(1000)
+                    system_records+=_rough_system_rows(catalog,{'변전설비':select_substation_band(km,system_track_count())},lengths,system_track_count())
                 if signal_code:
                     system_records+=_rough_system_rows(catalog,{'신호':signal_code},lengths,system_track_count())
                 for comm_code in comm_codes:
