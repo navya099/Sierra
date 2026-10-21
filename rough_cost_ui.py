@@ -9,6 +9,7 @@ from earthwork_simple import calculate_earthwork
 from profile_calculator import read_ground_points
 from system_kdi_link import load_eligible_catalog, provenance
 from track_length_link import segment_lengths, quantity_for_price
+from long_tunnel_rough import classify_tunnels, segment_key, estimate_long_tunnels
 
 TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축')
 
@@ -162,10 +163,10 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U6-ARCH1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U7-LONGTUN1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[]
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];long_tunnel_entries={}
     track_type=tk.IntVar(value=1)
     track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
     def system_track_count():
@@ -195,7 +196,28 @@ def open_rough_workspace(editor):
                 v=tk.StringVar(value=choices[0]);selections[work]=v
                 combo=ttk.Combobox(row,textvariable=v,values=choices,state='readonly',width=95);combo.pack(side='left',fill='x',expand=True)
                 filtered_pickers.append((combo,v,choices))
-            ttk.Label(frame,text='토공·교량·터널 연장은 기존 검증된 노반 계산에서 산출합니다.',wraplength=850).pack(anchor='w',pady=15)
+            ttk.Label(frame,text='토공·교량·일반터널은 기존 D5 엔진을 사용합니다. 개별 터널 10km 이상은 표 Ⅲ-77로 별도 계산합니다.',wraplength=850).pack(anchor='w',pady=8)
+            ttk.Label(frame,text='초장대터널(10km 이상) · 경사갱 1개소 연장(km), 개소수, 방재설비 비율(1.0~1.5%)을 직접 입력하세요.',wraplength=850).pack(anchor='w')
+            long_frame=ttk.LabelFrame(frame,text='초장대터널별 입력 (구조물 목록에서 자동 감지)',padding=6)
+            long_frame.pack(fill='x',pady=8)
+            def refresh_long_tunnels():
+                for child in long_frame.winfo_children():child.destroy()
+                _, longs=classify_tunnels(editor.segments)
+                old=dict(long_tunnel_entries);long_tunnel_entries.clear()
+                if not longs:
+                    ttk.Label(long_frame,text='현재 10km 이상 개별 터널이 없습니다.').pack(anchor='w')
+                for idx,seg in enumerate(longs,1):
+                    key=segment_key(seg)
+                    prior=old.get(key)
+                    variables=prior if prior else (tk.StringVar(value=''),tk.StringVar(value=''),tk.StringVar(value=''))
+                    long_tunnel_entries[key]=variables
+                    line=ttk.Frame(long_frame);line.pack(fill='x',pady=3)
+                    ttk.Label(line,text=f'{seg.name or "터널 "+str(idx)}  {seg.start_sta:.1f}~{seg.end_sta:.1f}m ({seg.length/1000:.3f}km)',width=48).pack(side='left')
+                    for label,var,width in (('경사갱 km/개소',variables[0],8),('개소',variables[1],5),('방재 %',variables[2],6)):
+                        ttk.Label(line,text=label).pack(side='left',padx=(6,1))
+                        ttk.Entry(line,textvariable=var,width=width).pack(side='left')
+            ttk.Button(frame,text='구조물 목록에서 초장대터널 갱신',command=refresh_long_tunnels).pack(anchor='w',pady=3)
+            refresh_long_tunnels()
         elif group in ('궤도','전력','전차선'):
             ttk.Label(frame,text='선로형식은 창 상단 공통 선택을 사용합니다 (복선전철은 시스템 단가의 복선에 대응).').pack(anchor='w')
             rows=[r for r in catalog if r['group']==group and r.get('method')=='ROUGH']
@@ -309,13 +331,29 @@ def open_rough_workspace(editor):
                 except Exception as exc:raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.') from exc
                 if not n.is_finite() or n<0 or n!=n.to_integral_value():raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.')
                 if n:arch_counts[code]=arch_counts.get(code,Decimal(0))+n
-            has_roadbed=any(chosen.values());has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get() or bool(arch_counts)
+            has_roadbed=any(chosen.values()) or bool(classify_tunnels(editor.segments)[1]);has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get() or bool(arch_counts)
             if not has_roadbed and not has_system:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
             if has_roadbed:
                 width,cut,fill=(float(v.get()) for v in editor.earthwork_vars)
                 earth=calculate_earthwork(read_ground_points(source),alignment,editor.segments,width,cut,fill)
-                rows,review,road_lengths=estimate_rough(earth,editor.segments,chosen,config=load_config())
+                ordinary_tunnels,long_tunnels=classify_tunnels(editor.segments)
+                if not long_tunnels:
+                    rows,review,road_lengths=estimate_rough(earth,editor.segments,chosen,config=load_config())
+                else:
+                    # Keep frozen estimator untouched. It computes earth/bridge using all
+                    # structures, while tunnel is handled separately per individual segment.
+                    base_chosen=dict(chosen);base_chosen['터널']=''
+                    rows,review,road_lengths=estimate_rough(earth,editor.segments,base_chosen,config=load_config())
+                    review=[r for r in review if r[0]!='터널']
+                    if ordinary_tunnels:
+                        if chosen.get('터널'):
+                            ordinary_rows,_,_=estimate_rough(earth,ordinary_tunnels,{'터널':chosen['터널']},config=load_config())
+                            rows.extend(r for r in ordinary_rows if r.group=='터널')
+                        else:
+                            review.append(('터널',f'10km 미만 일반터널 {sum(s.length for s in ordinary_tunnels)/1000:.6f}km 단가 미선택'))
+                    settings={key:{'shaft_length_km':vars[0].get(),'shaft_count':vars[1].get(),'fire_percent':vars[2].get()} for key,vars in long_tunnel_entries.items()}
+                    rows.extend(estimate_long_tunnels(long_tunnels,track_type.get(),settings))
             system_records=[];lengths=None
             if has_system:
                 lengths=segment_lengths(alignment.vips,editor.segments)
@@ -385,11 +423,11 @@ def open_rough_workspace(editor):
                     system_wb.close()
                 if buffer is not None:
                     buffer.close()
-            editor.log(f'개략 공사비 XLSX 저장(U4-SIGCOMM1, 선로형식={track_type.get()}): {path}')
+            editor.log(f'개략 공사비 XLSX 저장(U7-LONGTUN1, 선로형식={track_type.get()}): {path}')
             status.set('저장 완료 · 노반은 기존 D5 형식, 시스템은 독립 시트로 산정 · 미선택 공종은 미산정')
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U4)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U7)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
