@@ -197,8 +197,8 @@ def open_rough_workspace(editor):
                 combo=ttk.Combobox(row,textvariable=v,values=choices,state='readonly',width=95);combo.pack(side='left',fill='x',expand=True)
                 filtered_pickers.append((combo,v,choices))
             ttk.Label(frame,text='토공·교량·일반터널은 기존 D5 엔진을 사용합니다. 개별 터널 10km 이상은 표 Ⅲ-77로 별도 계산합니다.',wraplength=850).pack(anchor='w',pady=8)
-            ttk.Label(frame,text='초장대터널(10km 이상) · 경사갱 1개소 연장(km), 개소수, 방재설비 비율(1.0~1.5%)을 직접 입력하세요.',wraplength=850).pack(anchor='w')
-            long_frame=ttk.LabelFrame(frame,text='초장대터널별 입력 (구조물 목록에서 자동 감지)',padding=6)
+            ttk.Label(frame,text='초장대터널(10km 이상) · 터널별 경사갱 조건과 방재설비 비율을 입력합니다.',wraplength=850).pack(anchor='w')
+            long_frame=ttk.LabelFrame(frame,text='초장대터널별 입력 (구조물 목록에서 자동 감지)',padding=8)
             long_frame.pack(fill='x',pady=8)
             def refresh_long_tunnels():
                 for child in long_frame.winfo_children():child.destroy()
@@ -211,11 +211,34 @@ def open_rough_workspace(editor):
                     prior=old.get(key)
                     variables=prior if prior else (tk.StringVar(value=''),tk.StringVar(value=''),tk.StringVar(value=''))
                     long_tunnel_entries[key]=variables
-                    line=ttk.Frame(long_frame);line.pack(fill='x',pady=3)
-                    ttk.Label(line,text=f'{seg.name or "터널 "+str(idx)}  {seg.start_sta:.1f}~{seg.end_sta:.1f}m ({seg.length/1000:.3f}km)',width=48).pack(side='left')
-                    for label,var,width in (('경사갱 km/개소',variables[0],8),('개소',variables[1],5),('방재 %',variables[2],6)):
-                        ttk.Label(line,text=label).pack(side='left',padx=(6,1))
-                        ttk.Entry(line,textvariable=var,width=width).pack(side='left')
+                    item=ttk.LabelFrame(long_frame,text=f'{seg.name or "터널 "+str(idx)} · STA {seg.start_sta:.1f}~{seg.end_sta:.1f}m · 본선 {seg.length/1000:.3f}km',padding=8)
+                    item.pack(fill='x',pady=5)
+                    fields=ttk.Frame(item)
+                    fields.pack(anchor='w',fill='x')
+                    for col,(label,var,width) in enumerate((
+                        ('경사갱 1개소당 연장 (km)',variables[0],13),
+                        ('경사갱 개소수 (개소)',variables[1],11),
+                        ('방재설비 적용 비율 (%)',variables[2],12),
+                    )):
+                        field=ttk.Frame(fields)
+                        field.grid(row=0,column=col,sticky='w',padx=(0,22))
+                        ttk.Label(field,text=label).pack(anchor='w',pady=(0,3))
+                        ttk.Entry(field,textvariable=var,width=width).pack(anchor='w')
+                    total_var=tk.StringVar(value='경사갱 총연장: 입력 대기')
+                    def update_total(*_args, vs=variables, output=total_var):
+                        try:
+                            length=Decimal(vs[0].get().strip())
+                            count=Decimal(vs[1].get().strip())
+                            if not length.is_finite() or not count.is_finite() or length<0 or count<0 or count!=count.to_integral_value():
+                                raise ValueError
+                            output.set(f'경사갱 총연장: {length * count:g}km = {length:g}km × {int(count)}개소')
+                        except Exception:
+                            output.set('경사갱 총연장: 연장과 개소수를 입력하세요')
+                    for var in variables[:2]:
+                        var.trace_add('write',update_total)
+                    update_total()
+                    ttk.Label(item,textvariable=total_var,foreground='#555555').pack(anchor='w',pady=(7,0))
+                    ttk.Label(item,text='방재설비는 본선 공사비의 1.0~1.5%를 적용합니다.',foreground='#555555').pack(anchor='w',pady=(2,0))
             ttk.Button(frame,text='구조물 목록에서 초장대터널 갱신',command=refresh_long_tunnels).pack(anchor='w',pady=3)
             refresh_long_tunnels()
         elif group in ('궤도','전력','전차선'):
