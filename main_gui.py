@@ -34,7 +34,7 @@ except ImportError:
     HAS_DND = False
 
 
-APP_VERSION = "v12.8-S2.5-U11-STATION-RATE1"
+APP_VERSION = "v12.8-S2.5-U12-STATION-INTEGRATION1"
 
 def parse_ground_txt(path: Path) -> list[tuple[float, float]]:
     points = []
