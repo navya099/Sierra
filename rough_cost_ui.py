@@ -228,7 +228,9 @@ def build_station_segment_tab(frame, editor, track_type):
             line=ttk.Frame(rate_frame);line.pack(fill='x',pady=2)
             ttk.Label(line,text=f"{st['name']} · {st['classification']}",width=33).pack(side='left')
             if choices:
-                labels=[f"{r['code']} | {r['price_krw']:,}원/개소" for r in choices]
+                labels=[(f"{r['structure']} / {r['service']} / {r['platform']} / "
+                         f"{'일반부' if r['region']=='RURAL' else '도시부'} | "
+                         f"{r['price_krw']/100_000_000:g}억 원/개소") for r in choices]
                 combo=ttk.Combobox(line,textvariable=var,values=['미선택']+labels,state='readonly',width=85)
                 combo.pack(side='left',fill='x',expand=True)
                 rate_options[st['name']]={label:r['code'] for label,r in zip(labels,choices)}
@@ -264,7 +266,7 @@ def build_station_segment_tab(frame, editor, track_type):
 
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U14-STATION-RATE-UI1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U14-HF1-RATE-LABEL 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
