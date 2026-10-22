@@ -15,7 +15,7 @@ from station_rate_link import recommend as recommend_station_rate, validate_sele
 from station_cost_integration import reconcile as reconcile_station_cost, add_sheet as add_station_integration_sheet
 from station81_rough import RATES as STATION81_RATES, eligible as station81_eligible, estimate as estimate_station81, add_sheet as add_station81_sheet
 
-TABS = ('노반','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축','정거장(노반)')
+TABS = ('노반','정거장(노반)','궤도','전차선','전력','송전선로','변전설비','신호','통신','건축')
 
 def _roadbed_track_type(code):
     """Read explicit S/D/E track configuration from verified rough KDI code."""
@@ -141,7 +141,7 @@ def _rough_system_rows(catalog, selected, lengths, tracks, stations=None, arch_c
         price=Decimal(str(row['source_price_krw']))
         result.append({'group':group,'code':code,'name':row['name'], 'scope':scope,
                        'quantity':q,'unit':row['unit'],'unit_price':price,'amount':q*price,
-                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U6 개략] 건축 역사 유형별 {q}개소 (사용자 입력)' if group=='건축' else f' | [U5 개략] KDI 노선연장 {lengths["전체"]}m, 단계별 정액(중간값 미적용)' if scope=='노선연장 구간' else (f' | [U4 개략] 정거장 {stations}개소 (사용자 입력)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000'))})
+                       'basis':provenance(row,'kdi_general_rail_2019.json')+(f' | [U15 공통 정거장] 건축 역사 유형별 {q}개소 (역별 단가 선택)' if group=='건축' else f' | [U5 개략] KDI 노선연장 {lengths["전체"]}m, 단계별 정액(중간값 미적용)' if scope=='노선연장 구간' else (f' | [U15 공통 정거장] 정거장 {stations}개소 (구조물 판별 연동)' if scope=='정거장' else f' | [U4 개략] {scope} {lengths[scope]}m / 1000'))})
     return result
 
 def _build_system_workbook(records,lengths,tracks):
@@ -169,7 +169,7 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 
-def build_station_segment_tab(frame, editor, track_type):
+def build_station_segment_tab(frame, editor, track_type, on_change=None):
     """U14: one station UI for interval classification and user-confirmed III-81 rates."""
     ttk.Label(frame,text='정거장명과 STA 구간을 입력 → 구조물 판별 → 정거장별 KDI Ⅲ-81 단가 선택',wraplength=950).pack(anchor='w',pady=5)
     ttk.Label(frame,text='토공·교량 단일만 단가 선택 가능. 터널·복합은 미산정. 본선 공사비 차감·총사업비 자동 합산 없음.',wraplength=950).pack(anchor='w',pady=3)
@@ -177,6 +177,8 @@ def build_station_segment_tab(frame, editor, track_type):
     rows=[];cache=[];selections={};rate_options={}
     def invalidate(*_):
         cache.clear();selections.clear();rate_options.clear()
+        if on_change is not None:
+            on_change([], False)
     def add_row():
         i=len(rows)+1;line=ttk.Frame(host);line.pack(fill='x',pady=2)
         name=tk.StringVar(value=f'정거장 {i:02d}');start=tk.StringVar();mode=tk.StringVar(value='끝 STA');last=tk.StringVar()
@@ -191,7 +193,9 @@ def build_station_segment_tab(frame, editor, track_type):
         for v in (name,start,mode,last):v.trace_add('write',invalidate)
         rows.append(item);invalidate()
     for _ in range(3):add_row()
-    result=tk.Text(frame,height=11,wrap='none');result.pack(fill='both',expand=True,pady=6)
+    # Keep primary actions visible above the expandable results panel.
+    bar=ttk.Frame(frame);bar.pack(fill='x',pady=6)
+    result=tk.Text(frame,height=7,wrap='none');result.pack(fill='both',expand=True,pady=6)
     rate_frame=ttk.LabelFrame(frame,text='정거장별 단가 연계 (사용자 확정)');rate_frame.pack(fill='x',pady=5)
     def calculate():
         try:
@@ -206,12 +210,19 @@ def build_station_segment_tab(frame, editor, track_type):
                 end=station_number(last.get(),f'{label} 끝 STA 또는 연장')
                 if mode.get()=='연장(m)':end=a+end
                 output.append(classify_station(label,a,end,editor.segments,lo,hi))
-            if not output:raise ValueError('정거장 구간을 하나 이상 입력하세요.')
+            if not output:
+                cache.clear()
+                if on_change is not None:on_change([],True)
+                result.delete('1.0','end')
+                result.insert('end','등록 정거장 없음 (0개소)\n')
+                return True
             if len({r['name'] for r in output})!=len(output):raise ValueError('정거장명이 중복됩니다.')
             ordered=sorted(output,key=lambda x:x['start'])
             for left,right in zip(ordered,ordered[1:]):
                 if right['start']<left['end']:raise ValueError(f"정거장 구간 중복: {left['name']} / {right['name']}")
             cache[:]=output
+            if on_change is not None:
+                on_change([r['name'] for r in output], True)
             result.delete('1.0','end')
             for r in output:
                 result.insert('end',f"{r['name']} | {r['start']}~{r['end']}m | {r['length']}m | {r['sequence']} | {r['classification']}\n")
@@ -257,19 +268,20 @@ def build_station_segment_tab(frame, editor, track_type):
             add_station_segment_sheet(wb,cache);add_link_sheet(wb,entries);wb.save(path)
             messagebox.showinfo('저장 완료',f'정거장 {len(cache)}개소 판별 및 단가 연계 저장 완료',parent=frame.winfo_toplevel())
         except Exception as exc:messagebox.showerror('XLSX 오류',str(exc),parent=frame.winfo_toplevel())
-    bar=ttk.Frame(frame);bar.pack(fill='x',pady=6)
     ttk.Button(bar,text='+ 정거장 추가',command=add_row).pack(side='left',padx=4)
     ttk.Button(bar,text='구조물 판별',command=calculate).pack(side='left',padx=4)
     ttk.Button(bar,text='KDI Ⅲ-81 단가 연계',command=link_rates).pack(side='left',padx=4)
     ttk.Button(bar,text='판별·단가 XLSX 저장',command=export).pack(side='left',padx=4)
-    track_type.trace_add('write',lambda *_: (selections.clear(),rate_options.clear()))
+    track_type.trace_add('write',lambda *_: (selections.clear(),rate_options.clear(), on_change([],False) if on_change is not None else None))
+    return lambda: (list(cache), bool(cache))
 
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U14-HF1-RATE-LABEL 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U15-HF1-STATION-TAB-FIX 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
-    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
+    opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar(value='미확정');filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
+    shared_station_names=[];shared_station_confirmed=False;arch_station_vars={};arch_host=None;arch_rate_choices=[];station_getter=None
     track_type=tk.IntVar(value=1)
     track_count=track_type  # shared choice: 3 (복선전철) uses two tracks in system pricing
     def system_track_count():
@@ -278,6 +290,33 @@ def open_rough_workspace(editor):
     shared.pack(fill='x',padx=12,pady=(0,4))
     for label,value in (('단선',1),('복선',2),('복선전철',3)):
         ttk.Radiobutton(shared,text=label,variable=track_type,value=value).pack(side='left',padx=14)
+    def update_shared_stations(names, confirmed):
+        nonlocal shared_station_names, shared_station_confirmed
+        shared_station_names=list(names)
+        shared_station_confirmed=bool(confirmed)
+        station_count.set(str(len(names)) if confirmed else '미확정')
+        if arch_host is not None:
+            # Preserve selections by station name on a successful reclassification.
+            old={name:v.get() for name,v in arch_station_vars.items()}
+            old_var_ids={id(v) for v in arch_station_vars.values()}
+            arch_station_vars.clear()
+            filtered_pickers[:]=[(c,v,opts) for c,v,opts in filtered_pickers if id(v) not in old_var_ids]
+            for widget in arch_host.winfo_children():widget.destroy()
+            if not confirmed:
+                ttk.Label(arch_host,text='정거장(노반) 탭에서 구간 입력 후 [구조물 판별]을 실행하세요.').pack(anchor='w')
+            for name in names if confirmed else []:
+                line=ttk.Frame(arch_host);line.pack(fill='x',pady=2)
+                ttk.Label(line,text=name,width=20).pack(side='left')
+                v=tk.StringVar(value=old.get(name,'미선택 (미산정)'))
+                combo=ttk.Combobox(line,textvariable=v,values=arch_rate_choices,state='readonly',width=85)
+                combo.pack(side='left',fill='x',expand=True)
+                arch_station_vars[name]=v
+                filtered_pickers.append((combo,v,arch_rate_choices))
+            for combo,v,choices in filtered_pickers:
+                if combo.winfo_exists() and any(v is av for av in arch_station_vars.values()):
+                    valid=[choices[0]]+[label for label in choices[1:] if _eligible_for_track(lookup[label],track_type.get())]
+                    combo.configure(values=valid)
+                    if v.get() not in valid:v.set(valid[0])
     def picker(parent,group,rows,variable):
         choices=['미선택 (미산정)']
         for item in rows:
@@ -416,29 +455,21 @@ def open_rough_workspace(editor):
             comm_combo.pack(fill='x',pady=8)
             filtered_pickers.append((comm_combo,comm_variant,choices))
             line=ttk.Frame(frame);line.pack(fill='x',pady=10)
-            ttk.Label(line,text='정거장 개소수 (필수 · 0 이상의 정수):').pack(side='left')
-            ttk.Entry(line,textvariable=station_count,width=12).pack(side='left',padx=8)
-            ttk.Label(frame,text='정거장 개소수는 자동 추정하지 않습니다. 역이 0개인 경우 0을 입력하세요.').pack(anchor='w')
+            ttk.Label(line,text='공통 정거장 개소수:').pack(side='left')
+            ttk.Label(line,textvariable=station_count).pack(side='left',padx=8)
+            ttk.Label(frame,text='정거장(노반) 탭에서 구조물 판별이 완료된 정거장 목록을 자동 사용합니다.').pack(anchor='w')
         elif group=='정거장(노반)':
-            build_station_segment_tab(frame,editor,track_type)
+            station_getter=build_station_segment_tab(frame,editor,track_type,on_change=update_shared_stations)
         elif group=='건축':
-            ttk.Label(frame,text='KDI 표 Ⅲ-86 · 2019년 · 억원/개소 · 제비율 포함, VAT 제외 | 유형별 역사 개소수 입력',wraplength=850).pack(anchor='w',pady=6)
-            ttk.Label(frame,text='각 행에서 역사 유형과 개소수를 선택하세요. 같은 유형을 여러 행에서 선택하면 수량을 합산합니다. 미선택 행은 계산하지 않습니다.',wraplength=850).pack(anchor='w')
+            ttk.Label(frame,text='KDI 표 Ⅲ-86 · 2019년 · 역사별 1개소 단가 선택 · 제비율 포함, VAT 제외',wraplength=850).pack(anchor='w',pady=6)
+            ttk.Label(frame,text='정거장(노반) 탭에서 판별된 역마다 역사 유형을 선택합니다. 역 수량은 직접 입력하지 않습니다.',wraplength=850).pack(anchor='w')
             arch_rows=[r for r in catalog if r['group']=='건축' and r.get('method')=='ROUGH']
-            for i in range(12):
-                line=ttk.Frame(frame);line.pack(fill='x',pady=2)
-                ttk.Label(line,text=f'역사 {i+1:02d}',width=9).pack(side='left')
-                v=tk.StringVar();count=tk.StringVar(value='0')
-                choices=['미선택 (미산정)']
-                for item in arch_rows:
-                    label=f"{item['code']} | {item['spec']} | {item['condition']} | {int(item['source_price_krw']):,}원/{item['unit']}"
-                    choices.append(label);lookup[label]=item['code']
-                v.set(choices[0]);combo=ttk.Combobox(line,textvariable=v,values=choices,state='readonly',width=85)
-                combo.pack(side='left',fill='x',expand=True)
-                filtered_pickers.append((combo,v,choices))
-                ttk.Label(line,text='개소').pack(side='left',padx=5)
-                ttk.Entry(line,textvariable=count,width=6).pack(side='left')
-                arch_entries.append((v,count))
+            arch_rate_choices=['미선택 (미산정)']
+            for item in arch_rows:
+                label=f"{item['code']} | {item['spec']} | {item['condition']} | {int(item['source_price_krw']):,}원/{item['unit']}"
+                arch_rate_choices.append(label);lookup[label]=item['code']
+            arch_host=ttk.Frame(frame);arch_host.pack(fill='x',pady=10)
+            update_shared_stations(shared_station_names,shared_station_confirmed)
         else:
             ttk.Label(frame,text='미산정').pack(anchor='w')
     def refresh_track_filters(*_):
@@ -455,7 +486,7 @@ def open_rough_workspace(editor):
     track_type.trace_add('write',refresh_track_filters)
     refresh_track_filters()
     footer=ttk.Frame(win,padding=12);footer.pack(fill='x')
-    status=tk.StringVar(value='노반 정거장 표 Ⅲ-81 지원 · 개소수 수기 입력 · 기존 D5/시스템 동결')
+    status=tk.StringVar(value='U15 공통 정거장 목록: 통신·건축 연동 · 정거장(노반)에서 구조물 판별 후 사용')
     ttk.Label(footer,textvariable=status,wraplength=950).pack(anchor='w',pady=(0,8))
     def export():
         try:
@@ -470,11 +501,9 @@ def open_rough_workspace(editor):
             comm_key=comm_variant.get().split(' | ')[0] if ' | ' in comm_variant.get() else ''
             comm_codes=[];stations=None
             if comm_key:
-                if not station_count.get().strip():raise ValueError('통신 정거장 개소수를 입력하세요 (0개도 명시 입력).')
-                try:stations=Decimal(station_count.get().strip())
-                except Exception as exc:raise ValueError('정거장 개소수는 0 이상의 정수여야 합니다.') from exc
-                if not stations.is_finite() or stations<0 or stations!=stations.to_integral_value():
-                    raise ValueError('정거장 개소수는 0 이상의 정수여야 합니다.')
+                if not shared_station_confirmed:
+                    raise ValueError('통신 공사비 산정 전 정거장(노반) 탭에서 구조물 판별을 실행하세요.')
+                stations=Decimal(len(shared_station_names))
                 if comm_key not in {1:('S_NON','S_E'),2:('D_NON',),3:('D_E','D_CITY')}[track_type.get()]:
                     raise ValueError('통신 단가 유형이 공통 선로형식과 일치하지 않습니다.')
                 comm_codes=[f'COMM_ROUGH_{comm_key}_KM']
@@ -493,14 +522,13 @@ def open_rough_workspace(editor):
                 if n:station81_counts[code]=station81_counts.get(code,Decimal(0))+n
             station81_records=estimate_station81(station81_counts,track_type.get())
             arch_counts={}
-            for v,c in arch_entries:
+            if any(lookup.get(v.get(),'') for v in arch_station_vars.values()) and not shared_station_confirmed:
+                raise ValueError('건축 공사비 산정 전 정거장(노반) 탭에서 구조물 판별을 실행하세요.')
+            for name,v in arch_station_vars.items():
                 code=lookup.get(v.get(),'')
                 if not code:continue
-                if not _eligible_for_track(code,track_type.get()):raise ValueError('건축 단가가 공통 선로형식과 일치하지 않습니다.')
-                try:n=Decimal(c.get().strip())
-                except Exception as exc:raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.') from exc
-                if not n.is_finite() or n<0 or n!=n.to_integral_value():raise ValueError('건축 개소수는 0 이상의 정수여야 합니다.')
-                if n:arch_counts[code]=arch_counts.get(code,Decimal(0))+n
+                if not _eligible_for_track(code,track_type.get()):raise ValueError(f'{name}: 건축 단가가 공통 선로형식과 일치하지 않습니다.')
+                arch_counts[code]=arch_counts.get(code,Decimal(0))+Decimal(1)
             has_roadbed=any(chosen.values()) or bool(classify_tunnels(editor.segments)[1]);has_system=any(system_chosen.values()) or any(power_chosen.values()) or any(cat_chosen.values()) or bool(signal_code) or bool(comm_codes) or trans_enabled.get() or sub_enabled.get() or bool(arch_counts)
             if not has_roadbed and not has_system and not station81_records:raise ValueError('최소 1개 개략 단가를 선택하세요.')
             rows=[];review=[];road_lengths={}
@@ -605,6 +633,6 @@ def open_rough_workspace(editor):
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U9)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U15)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
