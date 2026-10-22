@@ -169,12 +169,14 @@ def _build_system_workbook(records,lengths,tracks):
     return wb
 
 
-def build_station_segment_tab(frame, editor):
-    """U13: embedded station interval/structure classifier; no manual station price UI."""
-    ttk.Label(frame, text='정거장명과 시작 STA, 끝 STA(또는 연장)를 입력하면 기존 구조물 구간과 자동 대조합니다.', wraplength=950).pack(anchor='w', pady=5)
-    ttk.Label(frame, text='구조물 데이터는 읽기 전용이며 정거장 단가 선택·사업비 반영은 이 탭에서 수행하지 않습니다.', wraplength=950).pack(anchor='w', pady=3)
+def build_station_segment_tab(frame, editor, track_type):
+    """U14: one station UI for interval classification and user-confirmed III-81 rates."""
+    ttk.Label(frame,text='정거장명과 STA 구간을 입력 → 구조물 판별 → 정거장별 KDI Ⅲ-81 단가 선택',wraplength=950).pack(anchor='w',pady=5)
+    ttk.Label(frame,text='토공·교량 단일만 단가 선택 가능. 터널·복합은 미산정. 본선 공사비 차감·총사업비 자동 합산 없음.',wraplength=950).pack(anchor='w',pady=3)
     host=ttk.Frame(frame);host.pack(fill='x',pady=5)
-    rows=[];cache=[]
+    rows=[];cache=[];selections={};rate_options={}
+    def invalidate(*_):
+        cache.clear();selections.clear();rate_options.clear()
     def add_row():
         i=len(rows)+1;line=ttk.Frame(host);line.pack(fill='x',pady=2)
         name=tk.StringVar(value=f'정거장 {i:02d}');start=tk.StringVar();mode=tk.StringVar(value='끝 STA');last=tk.StringVar()
@@ -184,16 +186,18 @@ def build_station_segment_tab(frame, editor):
         ttk.Combobox(line,textvariable=mode,values=['끝 STA','연장(m)'],state='readonly',width=10).pack(side='left',padx=2)
         ttk.Entry(line,textvariable=last,width=12).pack(side='left',padx=2)
         item=(name,start,mode,last,line)
-        ttk.Button(line,text='삭제',command=lambda: (rows.remove(item),line.destroy())).pack(side='left',padx=3)
-        rows.append(item)
+        def delete():rows.remove(item);line.destroy();invalidate()
+        ttk.Button(line,text='삭제',command=delete).pack(side='left',padx=3)
+        for v in (name,start,mode,last):v.trace_add('write',invalidate)
+        rows.append(item);invalidate()
     for _ in range(3):add_row()
-    result=tk.Text(frame,height=15,wrap='none');result.pack(fill='both',expand=True,pady=8)
+    result=tk.Text(frame,height=11,wrap='none');result.pack(fill='both',expand=True,pady=6)
+    rate_frame=ttk.LabelFrame(frame,text='정거장별 단가 연계 (사용자 확정)');rate_frame.pack(fill='x',pady=5)
     def calculate():
         try:
             _,alignment=editor.get_context()
             if alignment is None or len(alignment.vips)<2:raise ValueError('종단 선형을 먼저 불러오세요.')
-            lo,hi=alignment.vips[0][0],alignment.vips[-1][0]
-            output=[]
+            lo,hi=alignment.vips[0][0],alignment.vips[-1][0];output=[]
             for name,start,mode,last,_ in rows:
                 if not start.get().strip() and not last.get().strip():continue
                 label=name.get().strip()
@@ -203,6 +207,7 @@ def build_station_segment_tab(frame, editor):
                 if mode.get()=='연장(m)':end=a+end
                 output.append(classify_station(label,a,end,editor.segments,lo,hi))
             if not output:raise ValueError('정거장 구간을 하나 이상 입력하세요.')
+            if len({r['name'] for r in output})!=len(output):raise ValueError('정거장명이 중복됩니다.')
             ordered=sorted(output,key=lambda x:x['start'])
             for left,right in zip(ordered,ordered[1:]):
                 if right['start']<left['end']:raise ValueError(f"정거장 구간 중복: {left['name']} / {right['name']}")
@@ -214,24 +219,52 @@ def build_station_segment_tab(frame, editor):
             return True
         except Exception as exc:
             messagebox.showerror('구간 판별 오류',str(exc),parent=frame.winfo_toplevel());return False
-    def export():
+    def link_rates():
         if not calculate():return
-        path=filedialog.asksaveasfilename(parent=frame.winfo_toplevel(),defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')],initialfile='station_segments_u13.xlsx')
+        for child in rate_frame.winfo_children():child.destroy()
+        selections.clear();rate_options.clear()
+        for st in cache:
+            rec=recommend_station_rate(st,track_type.get());choices=rec['rates'];var=tk.StringVar(value='미선택')
+            line=ttk.Frame(rate_frame);line.pack(fill='x',pady=2)
+            ttk.Label(line,text=f"{st['name']} · {st['classification']}",width=33).pack(side='left')
+            if choices:
+                labels=[f"{r['code']} | {r['price_krw']:,}원/개소" for r in choices]
+                combo=ttk.Combobox(line,textvariable=var,values=['미선택']+labels,state='readonly',width=85)
+                combo.pack(side='left',fill='x',expand=True)
+                rate_options[st['name']]={label:r['code'] for label,r in zip(labels,choices)}
+            else:
+                ttk.Label(line,text='미산정 (터널·복합: 사용자 검토)',foreground='firebrick').pack(side='left')
+            selections[st['name']]=var
+        ttk.Label(rate_frame,text='선택한 단가는 XLSX 정거장단가연계 시트에만 참고 산정. 개략공사비 총괄 자동 합산 없음.').pack(anchor='w')
+    def export():
+        if not cache or set(selections)!=set(r['name'] for r in cache):
+            messagebox.showerror('단가 연계 오류','구조물 판별 후 단가 연계 버튼을 먼저 실행하세요.',parent=frame.winfo_toplevel());return
+        try:
+            entries=[]
+            for st in cache:
+                rec=recommend_station_rate(st,track_type.get());label=selections[st['name']].get();code=rate_options.get(st['name'],{}).get(label)
+                row=validate_station_rate(st,code,track_type.get()) if code else None
+                entries.append((st,rec,row))
+        except Exception as exc:
+            messagebox.showerror('단가 연계 오류',str(exc),parent=frame.winfo_toplevel());return
+        path=filedialog.asksaveasfilename(parent=frame.winfo_toplevel(),defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')],initialfile='station_rate_link_u14.xlsx')
         if not path:return
         try:
             from openpyxl import Workbook
-            wb=Workbook();wb.active.title='안내';wb.active['A1']='U13 정거장 구조물 판별 전용: 정거장 단가 자동 선택·공사비 자동 차감 없음'
-            add_station_segment_sheet(wb,cache);wb.save(path)
-            messagebox.showinfo('저장 완료',f'정거장 {len(cache)}개소 판별 결과 저장 완료',parent=frame.winfo_toplevel())
+            wb=Workbook();wb.active.title='안내';wb.active['A1']='U14 정거장 구간 판별 및 KDI Ⅲ-81 단가 연계 / 본선 공사비 차감 및 총사업비 자동 합산 없음'
+            add_station_segment_sheet(wb,cache);add_link_sheet(wb,entries);wb.save(path)
+            messagebox.showinfo('저장 완료',f'정거장 {len(cache)}개소 판별 및 단가 연계 저장 완료',parent=frame.winfo_toplevel())
         except Exception as exc:messagebox.showerror('XLSX 오류',str(exc),parent=frame.winfo_toplevel())
     bar=ttk.Frame(frame);bar.pack(fill='x',pady=6)
     ttk.Button(bar,text='+ 정거장 추가',command=add_row).pack(side='left',padx=4)
     ttk.Button(bar,text='구조물 판별',command=calculate).pack(side='left',padx=4)
-    ttk.Button(bar,text='판별 결과 XLSX 저장',command=export).pack(side='left',padx=4)
+    ttk.Button(bar,text='KDI Ⅲ-81 단가 연계',command=link_rates).pack(side='left',padx=4)
+    ttk.Button(bar,text='판별·단가 XLSX 저장',command=export).pack(side='left',padx=4)
+    track_type.trace_add('write',lambda *_: (selections.clear(),rate_options.clear()))
 
 
 def open_rough_workspace(editor):
-    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U13-STATION-UI1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
+    win=tk.Toplevel(editor);win.title('v12.8-S2.5-U14-STATION-RATE-UI1 개략 공사비 계산');win.geometry('1100x710');win.minsize(850,550)
     ttk.Label(win,text='KDI 개략 공사비 전용 | 세부 단가 사용 금지',padding=10).pack(anchor='w')
     notebook=ttk.Notebook(win);notebook.pack(fill='both',expand=True,padx=10,pady=5)
     opts=available_rough();catalog=_source_catalog();lookup={};selections={};system_vars={};power_vars={};cat_vars={};trans_enabled=tk.BooleanVar(value=False);sub_enabled=tk.BooleanVar(value=False);signal_var=tk.StringVar();comm_variant=tk.StringVar();station_count=tk.StringVar();filtered_pickers=[];arch_entries=[];station81_entries=[];long_tunnel_entries={}
@@ -385,7 +418,7 @@ def open_rough_workspace(editor):
             ttk.Entry(line,textvariable=station_count,width=12).pack(side='left',padx=8)
             ttk.Label(frame,text='정거장 개소수는 자동 추정하지 않습니다. 역이 0개인 경우 0을 입력하세요.').pack(anchor='w')
         elif group=='정거장(노반)':
-            build_station_segment_tab(frame,editor)
+            build_station_segment_tab(frame,editor,track_type)
         elif group=='건축':
             ttk.Label(frame,text='KDI 표 Ⅲ-86 · 2019년 · 억원/개소 · 제비율 포함, VAT 제외 | 유형별 역사 개소수 입력',wraplength=850).pack(anchor='w',pady=6)
             ttk.Label(frame,text='각 행에서 역사 유형과 개소수를 선택하세요. 같은 유형을 여러 행에서 선택하면 수량을 합산합니다. 미선택 행은 계산하지 않습니다.',wraplength=850).pack(anchor='w')
