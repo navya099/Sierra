@@ -63,8 +63,8 @@ def add_table117(wb, road_rows, station_records, system_records):
   sec,sub,spec,name,unit,qty,price,amount,code=rec
   qty=dec(qty);price=dec(price);amount=dec(amount)
   total+=amount;detail_sum+=amount
-  row(['',name,unit,float(qty),float(price/1000000),float(amount/1000000),code])
- def subtotal(label,amount):row([label,'소계',None,None,None,float(amount/1000000),None],'sub')
+  row(['',spec if spec else name,unit,float(qty),float(price/1000000),float(amount/1000000),name+' | '+code if spec else code])
+ def subtotal(label,amount,has_data=True):row([label,'소계',None,None,None,float(amount/1000000) if has_data else None,'미산정' if not has_data else None],'sub')
  for section in ['노반 본선','노반 정거장']+SYSTEM_SECTIONS:
   data=buckets.pop(section,[]);section_total=sum((dec(r[7]) for r in data),Decimal(0))
   section_sums[section]=section_total
@@ -77,23 +77,35 @@ def add_table117(wb, road_rows, station_records, system_records):
      matching=[(i,r) for i,r in enumerate(data) if i not in consumed and r[1]==sub and r[2]==spec]
      if not matching:row(['',spec,None,None,None,None,None])
      for i,r in matching:detail(r);consumed.add(i)
-    subtotal(sub,sum((dec(r[7]) for r in data if r[1]==sub),Decimal(0)))
+    subdata=[r for r in data if r[1]==sub]
+    subtotal(sub,sum((dec(r[7]) for r in subdata),Decimal(0)),bool(subdata))
    remaining=[r for i,r in enumerate(data) if i not in consumed]
    if remaining:
     row(['','기타/미분류',None,None,None,None,'원문 세부 항목 매핑 확인 필요'],'sub')
     for r in remaining:detail(r)
   else:
    for r in data:detail(r)
-  subtotal(section,section_total)
+  subtotal(section,section_total,bool(data))
  for section,data in buckets.items():
   section_total=sum((dec(r[7]) for r in data),Decimal(0))
   row([section,None,None,None,None,None,'원문 항목 외 공종: 누락 방지'],'section')
   for r in data:detail(r)
-  subtotal(section,section_total)
+  subtotal(section,section_total,bool(data))
  assert total==detail_sum,'세부 금액 합계 불일치'
  assert total==sum((dec(r[7]) for r in records),Decimal(0)),'원본 공사비와 불일치'
  row(['공사비 산정분 합계',None,None,None,None,float(total/1000000),'미산정 항목 제외 · 전체 사업비 아님'],'total')
- ws.append(['주','KDI 표 Ⅲ-117 참조',None,None,None,None,'상세 규격 매핑은 코드·설명 기준이며 원문 세부 분류는 검토 필요.'])
+ ws.append(['주','KDI 표 Ⅲ-117 참조',None,None,None,None,'실제 산정 0원은 0으로 표시, 미산정은 공란. 세부 규격은 원본 코드·설명 기준 분류.'])
+ # 인쇄용 표: 계층과 수치 가독성 강화
+ thin=Side(style='thin',color='B7C5D4')
+ for cells in ws.iter_rows(min_row=3):
+  for c in cells:
+   c.border=Border(bottom=thin)
+   c.alignment=Alignment(horizontal='right' if c.column in (4,5,6) else 'left',vertical='center',wrap_text=(c.column in (2,7)))
+  ws.row_dimensions[cells[0].row].height=23
+ ws.row_dimensions[1].height=31
+ ws.auto_filter.ref=None
+ ws.print_area=f'A1:G{ws.max_row}'
+ ws.sheet_properties.outlinePr.summaryBelow=True
  for col,width in {'A':24,'B':44,'C':14,'D':15,'E':21,'F':23,'G':70}.items():ws.column_dimensions[col].width=width
  ws.freeze_panes='D4';ws.sheet_properties.pageSetUpPr.fitToPage=True
  ws.page_setup.orientation='landscape';ws.page_setup.paperSize=ws.PAPERSIZE_A3;ws.page_setup.fitToWidth=1
