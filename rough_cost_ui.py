@@ -576,7 +576,7 @@ def open_rough_workspace(editor):
                 for key,code in selections_to_calc.items():
                     group='전력' if key.startswith('전력_') else key
                     system_records+=_rough_system_rows(catalog,{group:code},lengths,system_track_count())
-            path=filedialog.asksaveasfilename(parent=win,title='개략 공사비 XLSX 저장 (노반 D5 + 시스템 개략 별도 시트)',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
+            path=filedialog.asksaveasfilename(parent=win,title='개략 공사비 XLSX + 제출용 PDF 저장',defaultextension='.xlsx',filetypes=[('Excel','*.xlsx')])
             if not path:return
             # HF2: assemble the complete workbook in memory. No filesystem
             # temporary files, os.replace, or Windows rename/delete races.
@@ -613,12 +613,23 @@ def open_rough_workspace(editor):
                         main.active.title='안내'
                         main.active['A1']='정거장 노반 개략공사비 · 표 Ⅲ-81'
                     add_station81_sheet(main,station81_records)
-                # U16: KDI III-117 construction-only presentation (source sheets unchanged).
-                from kdi_table117_report import add_table117
-                add_table117(main, rows, station81_records, system_records)
+                # U16-R3: keep calculation/detail sheets, restore a review-first summary.
+                from kdi_dual_report import build_ledger, add_review_sheet, export_pdf
+                ledger=build_ledger(rows, station81_records, system_records)
+                expected_total=add_review_sheet(main, ledger)
                 # A single openpyxl save writes directly to the selected path.
                 # No .rough_cost_* files are created at any stage.
                 main.save(path)
+                # PDF is generated directly from the same immutable ledger, not Excel print.
+                pdf_path=str(Path(path).with_suffix('.pdf'))
+                try:
+                    pdf_total=export_pdf(pdf_path,ledger,
+                        line_km=float(lengths['전체']/Decimal(1000)) if lengths else None,
+                        station_count=len(shared_station_names) if shared_station_confirmed else None)
+                    if pdf_total != expected_total:
+                        raise ValueError('XLSX/PDF 공사비 합계 불일치')
+                except Exception as pdf_exc:
+                    raise RuntimeError(f'XLSX는 저장했지만 PDF 생성에 실패했습니다: {pdf_exc}') from pdf_exc
             except PermissionError as exc:
                 raise PermissionError(
                     f'선택한 XLSX에 쓰기 권한이 없거나 다른 프로그램이 사용 중입니다: {path}\n'
@@ -631,11 +642,11 @@ def open_rough_workspace(editor):
                     system_wb.close()
                 if buffer is not None:
                     buffer.close()
-            editor.log(f'개략 공사비 XLSX 저장(U9-STATION81, 선로형식={track_type.get()}): {path}')
-            status.set('저장 완료 · 노반은 기존 D5 형식, 시스템은 독립 시트로 산정 · 미선택 공종은 미산정')
-            messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
-        except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
+            editor.log(f'개략 공사비 XLSX/PDF 저장(U16-R3, 선로형식={track_type.get()}): {path}')
+            status.set('저장 완료 · XLSX 통합집계 + PDF 제출양식 · 미선택 공종은 미산정')
+            messagebox.showinfo('개략 공사비','XLSX 및 동일 이름의 PDF 저장 완료. XLSX는 검증용, PDF는 제출용입니다.',parent=win)
+        except (ValueError,TypeError,OSError,ImportError,KeyError,RuntimeError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U16 · KDI Ⅲ-117)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX + PDF 출력 (U16-R3)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
