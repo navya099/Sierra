@@ -614,7 +614,8 @@ def open_rough_workspace(editor):
                         main.active['A1']='정거장 노반 개략공사비 · 표 Ⅲ-81'
                     add_station81_sheet(main,station81_records)
                 # U16-R3: keep calculation/detail sheets, restore a review-first summary.
-                from kdi_dual_report import build_ledger, add_review_sheet, export_pdf
+                from kdi_dual_report import build_ledger, add_review_sheet
+                from kdi_original_pdf import export_original_pdf
                 ledger=build_ledger(rows, station81_records, system_records)
                 expected_total=add_review_sheet(main, ledger)
                 # A single openpyxl save writes directly to the selected path.
@@ -623,7 +624,7 @@ def open_rough_workspace(editor):
                 # PDF is generated directly from the same immutable ledger, not Excel print.
                 pdf_path=str(Path(path).with_suffix('.pdf'))
                 try:
-                    pdf_total=export_pdf(pdf_path,ledger,
+                    pdf_total=export_original_pdf(pdf_path,ledger,
                         line_km=float(lengths['전체']/Decimal(1000)) if lengths else None,
                         station_count=len(shared_station_names) if shared_station_confirmed else None)
                     if pdf_total != expected_total:
@@ -642,7 +643,7 @@ def open_rough_workspace(editor):
                     system_wb.close()
                 if buffer is not None:
                     buffer.close()
-            editor.log(f'개략 공사비 XLSX/PDF 저장(U16-R3, 선로형식={track_type.get()}): {path}')
+            editor.log(f'개략 공사비 XLSX/PDF 저장(U16-R6, 선로형식={track_type.get()}): {path}')
             status.set('저장 완료 · XLSX 통합집계 + PDF 제출양식 · 미선택 공종은 미산정')
             messagebox.showinfo('개략 공사비','XLSX 및 동일 이름의 PDF 저장 완료. XLSX는 검증용, PDF는 제출용입니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError,RuntimeError) as exc:
