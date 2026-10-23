@@ -51,6 +51,7 @@ def add_review_sheet(wb, ledger):
     return grand
 
 def export_pdf(path, ledger, *, line_km=None, station_count=None):
+    """U16-R4: grouped KDI submission PDF. No changes to ledger or XLSX."""
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -59,41 +60,70 @@ def export_pdf(path, ledger, *, line_km=None, station_count=None):
     from reportlab.pdfbase.ttfonts import TTFont
     from xml.sax.saxutils import escape
     import os
-    fonts=[r'C:\Windows\Fonts\malgun.ttf',r'C:\Windows\Fonts\gulim.ttc', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf']
-    font=next((p for p in fonts if os.path.isfile(p)),None)
-    if not font:raise RuntimeError('PDF 출력용 한글 글꼴을 찾을 수 없습니다 (맑은 고딕 또는 나눔고딕 필요).')
+
+    fonts=[r'C:\Windows\Fonts\malgun.ttf',r'C:\Windows\Fonts\gulim.ttc',
+           '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+           '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf']
+    font=next((f for f in fonts if os.path.isfile(f)),None)
+    if not font: raise RuntimeError('PDF 출력용 한글 글꼴을 찾을 수 없습니다.')
     pdfmetrics.registerFont(TTFont('KDIReportKorean',font))
-    normal=ParagraphStyle('normalKDI',fontName='KDIReportKorean',fontSize=7.3,leading=10)
-    small=ParagraphStyle('smallKDI',parent=normal,fontSize=6.4,leading=8.5)
-    title=ParagraphStyle('titleKDI',parent=normal,fontSize=14,leading=20,alignment=1,spaceAfter=12)
-    doc=SimpleDocTemplate(str(path),pagesize=landscape(A4),leftMargin=30,rightMargin=30,topMargin=35,bottomMargin=35,title='KDI 표 Ⅲ-117 공사비 내역')
-    P=lambda s,sty=small:Paragraph(escape(str(s)),sty)
+    small=ParagraphStyle('r4small',fontName='KDIReportKorean',fontSize=7.1,leading=10)
+    normal=ParagraphStyle('r4normal',parent=small,fontSize=8,leading=11)
+    title=ParagraphStyle('r4title',parent=normal,fontSize=14,leading=20,alignment=1,spaceAfter=9)
+    P=lambda v,style=small:Paragraph(escape(str(v)),style)
+    def num(v,places=3):
+        # Round only for presentation; Decimal ledger stays unchanged.
+        return f'{v:,.{places}f}'.rstrip('0').rstrip('.') if v else '0'
+    page=landscape(A4)
+    doc=SimpleDocTemplate(str(path),pagesize=page,leftMargin=30,rightMargin=30,
+                          topMargin=33,bottomMargin=34,title='KDI 표 Ⅲ-117 공사비 내역')
     story=[P('표 Ⅲ-117  총사업비 내역 (일반철도: 개략적 기준)',title)]
-    overview=f'가격 기준: 2019년  |  금액 단위: 백만원  |  공사비 산정분 (미산정 제외)'
-    if line_km is not None:overview+=f'  |  총연장: {line_km:.3f} km'
-    if station_count is not None:overview+=f'  |  정거장: {station_count}개소'
-    story.extend([P(overview,normal),Spacer(1,10)])
-    headers=['공종','규격 / 산정항목','단위','수량','단가(백만원)','금액(백만원)','비고']
-    data=[[P(h,normal) for h in headers]]
-    style=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#D9E3ED')),('FONTNAME',(0,0),(-1,-1),'KDIReportKorean'),('GRID',(0,0),(-1,-1),0.35,colors.HexColor('#8293A2')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('ALIGN',(2,1),(5,-1),'RIGHT')]
+    overview='가격 기준: 2019년  |  금액 단위: 백만원  |  공사비 산정분 (미산정 제외)'
+    if line_km is not None: overview+=f'  |  총연장: {line_km:.3f} km'
+    if station_count is not None: overview+=f'  |  정거장: {station_count}개소'
+    story.extend([P(overview,normal),Spacer(1,9)])
+    widths=[91,228,46,62,86,95,167]
+    header=['공종','규격 / 산정항목','단위','수량','단가(백만원)','금액(백만원)','비고']
+    line=colors.HexColor('#8392A0')
+    def styled(rows, bands=(), subtotal_index=None, header_row=False):
+        t=Table(rows,colWidths=widths,hAlign='CENTER',repeatRows=1 if header_row else 0)
+        st=[('GRID',(0,0),(-1,-1),.35,line),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),
+            ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]
+        for i in bands:
+            st.extend([('BACKGROUND',(0,i),(-1,i),colors.HexColor('#E9EFF5')),
+                       ('SPAN',(0,i),(5,i))])
+        if subtotal_index is not None:
+            st.extend([('BACKGROUND',(0,subtotal_index),(-1,subtotal_index),colors.HexColor('#F1F4F7')),
+                       ('SPAN',(0,subtotal_index),(4,subtotal_index))])
+        if header_row: st.append(('BACKGROUND',(0,0),(-1,0),colors.HexColor('#D9E3ED')))
+        t.setStyle(TableStyle(st))
+        return t
+    story.append(styled([[P(h,normal) for h in header]],header_row=True))
     by=defaultdict(list)
-    for r in ledger:by[r['section']].append(r)
+    for r in ledger: by[r['section']].append(r)
     total=Decimal(0)
     for sec in SECTIONS+sorted(set(by)-set(SECTIONS)):
         entries=by.get(sec,[])
-        idx=len(data);data.append([P(sec,normal),'','','','','',P('미산정' if not entries else '',small)])
-        style.extend([('BACKGROUND',(0,idx),(-1,idx),colors.HexColor('#EAF0F5')),('SPAN',(0,idx),(5,idx))])
+        rows=[[P(sec,normal),'','','','','',P('미산정' if not entries else '')]]
         for r in entries:
-            data.append(['',P((r['sub']+' · ' if r['sub'] else '')+r['name']),P(r['unit']),P(f"{r['quantity']:,.4f}".rstrip('0').rstrip('.')),P(f"{r['unit_price']/1000000:,.6f}".rstrip('0').rstrip('.')),P(f"{r['amount']/1000000:,.6f}".rstrip('0').rstrip('.')),P(r['code'])])
+            rows.append(['',P((r['sub']+' · ' if r['sub'] else '')+r['name']),P(r['unit']),
+                         P(num(r['quantity'],4)),P(num(r['unit_price']/1000000)),
+                         P(num(r['amount']/1000000)),P(r['code'])])
         subtotal=sum((r['amount'] for r in entries),Decimal(0));total+=subtotal
-        idx=len(data);data.append([P(sec+' 소계',normal),'','','','',P(f'{subtotal/1000000:,.6f}'.rstrip('0').rstrip('.') if entries else ''),''])
-        style.extend([('BACKGROUND',(0,idx),(-1,idx),colors.HexColor('#F4F6F8')),('SPAN',(0,idx),(4,idx))])
-    idx=len(data);data.append([P('공사비 산정분 합계',normal),'','','','',P(f'{total/1000000:,.6f}'.rstrip('0').rstrip('.')),P('미산정 제외')]);style.extend([('BACKGROUND',(0,idx),(-1,idx),colors.HexColor('#D9E3ED')),('SPAN',(0,idx),(4,idx))])
-    table=Table(data,colWidths=[95,216,43,62,88,92,179],repeatRows=1,hAlign='CENTER',splitByRow=1)
-    table.setStyle(TableStyle(style))
-    story.extend([table,Spacer(1,8),P('주: 실제 산정 0원은 0으로 표시하며, 미산정 항목은 공란으로 표시합니다. 전체 사업비가 아닌 산정된 공사비만 포함합니다.',normal)])
+        rows.append([P(sec+' 소계',normal),'','','','',
+                     P(num(subtotal/1000000) if entries else ''),''])
+        block=styled(rows,bands=(0,),subtotal_index=len(rows)-1)
+        # Keep the whole short section together; longer sections may split naturally.
+        if len(rows)<=12: story.append(KeepTogether([block]))
+        else: story.append(block)
+    grand=[[P('공사비 산정분 합계',normal),'','','','',P(num(total/1000000)),P('미산정 제외')]]
+    gt=styled(grand)
+    gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#D9E3ED')),
+                            ('SPAN',(0,0),(4,0))]))
+    story.append(KeepTogether([gt,Spacer(1,7),P('주: 실제 산정 0원은 0으로 표시하며, 미산정 항목은 공란으로 표시합니다. 전체 사업비가 아닌 산정된 공사비만 포함합니다.',normal)]))
     def footer(canvas,doc):
         canvas.setFont('KDIReportKorean',8)
-        canvas.drawRightString(landscape(A4)[0]-30,19,f'{doc.page} 쪽')
+        canvas.drawRightString(page[0]-30,19,f'{doc.page} 쪽')
     doc.build(story,onFirstPage=footer,onLaterPages=footer)
     return total
