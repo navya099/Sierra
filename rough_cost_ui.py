@@ -613,6 +613,9 @@ def open_rough_workspace(editor):
                         main.active.title='안내'
                         main.active['A1']='정거장 노반 개략공사비 · 표 Ⅲ-81'
                     add_station81_sheet(main,station81_records)
+                # U16: KDI III-117 construction-only presentation (source sheets unchanged).
+                from kdi_table117_report import add_table117
+                add_table117(main, rows, station81_records, system_records)
                 # A single openpyxl save writes directly to the selected path.
                 # No .rough_cost_* files are created at any stage.
                 main.save(path)
@@ -633,6 +636,6 @@ def open_rough_workspace(editor):
             messagebox.showinfo('개략 공사비','XLSX 저장 완료. 시스템 개략 항목은 별도 시트로 출력됩니다. 기존 D5는 노반만 읽습니다.',parent=win)
         except (ValueError,TypeError,OSError,ImportError,KeyError) as exc:
             messagebox.showerror('개략 공사비',str(exc),parent=win)
-    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U15)',command=export).pack(side='right')
+    ttk.Button(footer,text='개략 공사비 XLSX 출력 (U16 · KDI Ⅲ-117)',command=export).pack(side='right')
     ttk.Button(footer,text='닫기',command=win.destroy).pack(side='right',padx=10)
     return win
