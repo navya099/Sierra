@@ -626,7 +626,12 @@ def open_rough_workspace(editor):
                 try:
                     pdf_total=export_original_pdf(pdf_path,ledger,
                         line_km=float(lengths['전체']/Decimal(1000)) if lengths else None,
-                        station_count=len(shared_station_names) if shared_station_confirmed else None)
+                        station_count=len(shared_station_names) if shared_station_confirmed else None,
+                        bridge_count=sum(seg.kind == 'BRIDGE' for seg in editor.segments),
+                        tunnel_count=sum(seg.kind == 'TUNNEL' for seg in editor.segments),
+                        bridge_length_m=sum(seg.length for seg in editor.segments if seg.kind == 'BRIDGE'),
+                        tunnel_length_m=sum(seg.length for seg in editor.segments if seg.kind == 'TUNNEL'),
+                        new_km=float(lengths['전체']/Decimal(1000)) if lengths else None)
                     if pdf_total != expected_total:
                         raise ValueError('XLSX/PDF 공사비 합계 불일치')
                 except Exception as pdf_exc:
