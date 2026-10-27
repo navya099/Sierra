@@ -1,1 +1,13 @@
-v1.4 PROFILE 직접 작도 시험판\n원본 프로젝트의 종단 계산/작도 모듈 사본을 profile_engine/에 격리하여, 신규 도곽의 modelspace에 직접 작도합니다. 기존 final_result DXF를 불러오지 않습니다.\n검증용 가상 PLAN/PROFILE 데이터를 포함합니다. 실제 입력은 --plan 원본평면.dxf --profile 원본종단.dxf 입니다.\n현재 종곡선 길이, 구조물, 터널 등 GUI 설정 전달은 아직 미연동입니다. 장대 시트나 문자 영역 경계의 완전 클리핑은 후속 작업입니다.\n기본값: 수평 1:1000, 수직 1:400, 시트 200m.\n
+종평면도 v1.4.2 — 패키지 구조 정리 (v1.4 원본 기준)
+
+압축 파일의 내용을 D:\git\Sierra\ 아래에 그대로 풀어주세요.
+기존 Sierra 최상위 profile_drawing.py, profile_split.py 등은 이동/수정하지 않습니다.
+신규 엔진은 combined_plan_profile/profile_engine 안에 격리했습니다.
+
+테스트 실행 (D:\git\Sierra):
+python combined_plan_profile_v1_4.py --plan "test_data/테스트용_FL_가상선형.dxf" --profile "test_data/테스트용_가상종단.dxf" --sheet-length 200 --horizontal-scale 1000 --vertical-scale 400
+
+실제 입력은 --plan/--profile 경로를 실제 파일로 바꾸세요.
+출력 기본 경로: combined_plan_profile/출력/
+
+변경 범위: import 경로와 패키지 구성만 변경. 기존 v1.4 PLAN/PROFILE 작도 알고리즘은 그대로 유지.

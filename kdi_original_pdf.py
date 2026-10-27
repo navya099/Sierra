@@ -71,7 +71,7 @@ def classify(row):
         return None
     return None
 
-def export_original_pdf(path,ledger,*,line_km=None,station_count=None,bridge_count=None,tunnel_count=None):
+def export_original_pdf(path,ledger,*,line_km=None,station_count=None,bridge_count=None,tunnel_count=None,bridge_length_m=None,tunnel_length_m=None,existing_km=None,new_km=None):
     if not TEMPLATE.exists():raise FileNotFoundError(f'KDI 원문 템플릿 없음: {TEMPLATE}')
     grouped=defaultdict(list)
     total=Decimal(0)
@@ -95,6 +95,9 @@ def export_original_pdf(path,ledger,*,line_km=None,station_count=None,bridge_cou
     def write_row(key,items):
         page_index,y=ROWS[key];p=pdf[page_index]
         amt=sum((Decimal(str(r['amount'])) for r in items),Decimal(0))
+        # HF2: hide zero-priced lines in PDF only; preserve ledger and totals.
+        if items and all(Decimal(str(r["unit_price"])) == 0 for r in items):
+            return
         # A single source item retains quantity and rate; multiple items show amount only.
         if len(items)==1:
             r=items[0];draw(p,340,y,fmt(r['quantity'],3),29,6.5)
@@ -109,10 +112,15 @@ def export_original_pdf(path,ledger,*,line_km=None,station_count=None,bridge_cou
     draw(pdf[1],128,734,'* F = A (provisional; B-E not estimated)',280,7)
     # Short explanatory note below the original table; do not alter B-E blank cells.
     # Draw only in whitespace; preserve original page number and continuing-table caption.
-    if line_km is not None:draw(pdf[0],342,287,fmt(line_km,3),35,6.7)
-    if station_count is not None:draw(pdf[0],157,297,str(station_count),18,6.7)
-    if bridge_count is not None:draw(pdf[0],179,307,str(bridge_count),19,6.7)
-    if tunnel_count is not None:draw(pdf[0],283,307,str(tunnel_count),18,6.7)
+    # HF3: total, existing-line, and new-line fields in the original KDI header.
+    if line_km is not None: draw(pdf[0],157,287,fmt(line_km,3),31,9.0)
+    if existing_km is not None: draw(pdf[0],242,287,fmt(existing_km,3),31,9.0)
+    if new_km is not None: draw(pdf[0],312,287,fmt(new_km,3),29,9.0)
+    if station_count is not None: draw(pdf[0],163,297,str(station_count),15,9.0)
+    if bridge_count is not None: draw(pdf[0],183,307,str(bridge_count),15,9.0)
+    if tunnel_count is not None: draw(pdf[0],285,307,str(tunnel_count),15,9.0)
+    if bridge_length_m is not None: draw(pdf[0],221,307,fmt(bridge_length_m,0),39,8.4)
+    if tunnel_length_m is not None: draw(pdf[0],323,307,fmt(tunnel_length_m,0),57,8.4)
     # F provisional status is also carried in PDF metadata, for downstream inspection.
     pdf.set_metadata({'title':'KDI 표 Ⅲ-117 총사업비 내역 (개략적 기준)',
                       'subject':'F 총사업비는 A 공사비 산정분을 임시 반영; B-E 미산정'})
