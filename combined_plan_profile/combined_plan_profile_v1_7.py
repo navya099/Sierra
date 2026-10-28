@@ -7,7 +7,7 @@ from dataclasses import replace
 from .profile_engine.profile_drawing import create_profile_drawing, DrawingOptions
 from .profile_engine.profile_calculator import read_ground_points
 from .profile_engine.dxf_reader import extract_profile
-from .combined_plan_profile_v1_7_core import generate
+from .combined_plan_profile_v1_7_core import generate, read_alignment
 from .plan_entities_v1_7 import render_plan_entities
 import ezdxf
 
@@ -28,8 +28,11 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
                                local,target_doc=doc)
     source_doc=ezdxf.readfile(str(plan))
+    fl_points, fl_distances = read_alignment(plan)
     def render_plan(doc,a,b,index,transform,angle):
-        render_plan_entities(source_doc,doc,transform,angle,horizontal_scale)
+        render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
+                             sheet_start=a,sheet_end=b,fl_points=fl_points,
+                             fl_distances=fl_distances,station_origin=station_origin)
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,profile_hook=render,plan_hook=render_plan)
