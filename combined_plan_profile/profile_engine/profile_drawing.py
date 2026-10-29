@@ -402,7 +402,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                       (x+2.5, ym+3), (x, ym+7), (x, y1)]
             msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
             if options.elevation_pole_solid and options.elevation_pole_at_datum_breaks:
-                draw_elevation_pole(x, right.datum_el, is_break=True)
+                draw_elevation_pole(x -2.5, right.datum_el, is_break=True)
             _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
                   2.4, 'DATUM_LABEL')
             _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
