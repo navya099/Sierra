@@ -76,13 +76,18 @@ def update_titleblock(doc, *, number: int, total: int, sheet_start: float,
     if route_name is not None:
         updates['TD_RLNAME'] = route_name
     counts = {tag: 0 for tag in updates}
+    changes = []
     for insert in doc.modelspace().query('INSERT'):
         for attr in insert.attribs:
             tag = attr.dxf.tag.upper()
             if tag in updates:
-                attr.dxf.text = updates[tag]
+                before = attr.dxf.text
+                after = updates[tag]
+                if before != after:
+                    attr.dxf.text = after
+                    changes.append((tag, before, after))
                 counts[tag] += 1
     missing = [tag for tag, n in counts.items() if n == 0]
     if missing:
         raise ValueError(f'도각 속성 태그가 없습니다: {missing}. --template 도각 DXF를 확인하세요.')
-    return counts
+    return {"counts": counts, "changes": changes}

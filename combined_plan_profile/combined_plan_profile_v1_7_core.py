@@ -128,7 +128,9 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
             vertical_scale=vertical_scale, project_name=project_name, route_name=route_name,
             drawing_title=(titleblock_config or {}).get("drawing_title", "종평면도"),
             custom_attributes=(titleblock_config or {}).get("attributes", {}))
-        print(f"[도각 속성] {number}시트: {updated}", flush=True)
+        print(f"[도각 속성] {number}시트: {len(updated['changes'])}개 값 변경 / {sum(updated['counts'].values())}개 태그 일치", flush=True)
+        for tag, before, after in updated['changes']:
+            print(f"  {tag:<18}: {before!r} → {after!r}", flush=True)
         path=out/f"종평면도({number}).dxf"
         if path.resolve() in (Path(template).resolve(),Path(plan).resolve()):
             raise ValueError("입력 파일 덮어쓰기 방지")
