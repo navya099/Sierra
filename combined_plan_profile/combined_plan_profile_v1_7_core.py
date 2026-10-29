@@ -69,15 +69,25 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
     layer = "ZPP_SHEET_ANNOTATION"
     if layer not in doc.layers:
         doc.layers.new(layer, dxfattribs={"color": 7})
-    for rect, title in (
-        (PLAN_RECT, f"평면도(S={horizontal_scale:g})"),
-        (PROFILE_RECT, f"종단면도(V={vertical_scale:g})"),
-    ):
+    for rect in (PLAN_RECT, PROFILE_RECT):
         x0, y0, x1, y1 = rect
         cx = (x0 + x1) / 2
-        # Titles are inside the upper edge, separated from the drawing content.
-        msp.add_text(title, dxfattribs={"layer": layer, "height": 4.0}).set_placement(
-            (cx, y1 - 7.0), align=TextEntityAlignment.MIDDLE_CENTER)
+        if rect == PLAN_RECT:
+            title = f"평면도(S={horizontal_scale:,.0f})"
+            msp.add_text(title, dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+                (cx, y1 - 7.0), align=TextEntityAlignment.MIDDLE_CENTER)
+        else:
+            # Two stacked scale labels to the right of a vertically centered title.
+            # Use separate TEXT entities for predictable AutoCAD placement.
+            mid_y = y1 - 9.0
+            title_x = cx - 8.0
+            scale_x = cx + 3.0
+            msp.add_text("종단면도", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+                (title_x, mid_y), align=TextEntityAlignment.MIDDLE_RIGHT)
+            msp.add_text(f"(H={horizontal_scale:,.0f}", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+                (scale_x, mid_y + 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
+            msp.add_text(f" V={vertical_scale:,.0f})", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+                (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
         cy = (y0 + y1) / 2
         if left_direction:
             msp.add_text(left_direction, dxfattribs={"layer": layer, "height": 3.0, "rotation": 90}).set_placement(
