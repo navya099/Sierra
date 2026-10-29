@@ -6,6 +6,7 @@ import argparse, math, sys
 from time import perf_counter
 import ezdxf
 from ezdxf.math import Vec2
+from .titleblock_attributes_v1_9a import update_titleblock
 
 PLAN_RECT=(35.,330.,811.,530.)
 PROFILE_RECT=(35.,70.,811.,315.)
@@ -62,7 +63,8 @@ def sheet_ranges(start,end,length):
     return [(start+i*length,min(end,start+(i+1)*length)) for i in range(n)]
 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
-             sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None):
+             sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
+             vertical_scale=400., project_name=None, route_name=None):
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     pts,ds=read_alignment(plan)
     fl_global_width=read_fl_global_width(plan)
@@ -75,7 +77,8 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     if Path(template).resolve()==Path(plan).resolve():raise ValueError("템플릿과 선형 파일은 별도여야 합니다")
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     results=[]
-    for number,(sa,sb) in enumerate(sheet_ranges(start,end,sheet_length),1):
+    ranges=sheet_ranges(start,end,sheet_length)
+    for number,(sa,sb) in enumerate(ranges,1):
         doc=ezdxf.readfile(str(template));msp=doc.modelspace();doc.header['$INSUNITS']=4
         for name,color in [('ZPP_PLAN_CENTER',1),('ZPP_PLAN_AREA',3),('ZPP_PROFILE_AREA',5),('ZPP_GUIDE_LABEL',7)]:
             if name not in doc.layers:doc.layers.new(name,dxfattribs={'color':color})
@@ -120,6 +123,10 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
             plan_hook(doc, sa, sb, number, transform, angle)
         if profile_hook is not None:
             profile_hook(doc, sa, sb, number)
+        updated = update_titleblock(doc, number=number, total=len(ranges),
+            sheet_start=sa, sheet_end=sb, horizontal_scale=horizontal_scale,
+            vertical_scale=vertical_scale, project_name=project_name, route_name=route_name)
+        print(f"[도각 속성] {number}시트: {updated}", flush=True)
         path=out/f"종평면도({number}).dxf"
         if path.resolve() in (Path(template).resolve(),Path(plan).resolve()):
             raise ValueError("입력 파일 덮어쓰기 방지")

@@ -17,7 +17,8 @@ from datetime import datetime
 from time import perf_counter
 
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
-          vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None):
+          vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
+          project_name=None,route_name=None):
     t0=perf_counter()
     ground=read_ground_points(profile);vip=extract_profile(profile)
     print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
@@ -73,7 +74,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
-         horizontal_scale=horizontal_scale,profile_hook=render,plan_hook=render_plan)
+         horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
+         project_name=project_name,route_name=route_name,profile_hook=render,plan_hook=render_plan)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
@@ -91,13 +93,16 @@ if __name__=="__main__":
     p.add_argument("--station-origin",type=float,default=0.)
     p.add_argument("--start-sta",type=float)
     p.add_argument("--end-sta",type=float)
+    p.add_argument("--project-name",default=None,help="도각 사업명 (미입력 시 원본 유지)")
+    p.add_argument("--route-name",default=None,help="도각 노선명 (미입력 시 원본 유지)")
     a=p.parse_args()
     started_at = datetime.now()
     started_tick = perf_counter()
     print(f"[시작시간] {started_at:%Y-%m-%d %H:%M:%S}", flush=True)
     try:
         for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
-            a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta):
+            a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta,
+            a.project_name,a.route_name):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()
