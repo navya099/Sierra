@@ -239,7 +239,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'ALIGNMENT_ELEMENT_TEXT', 7, 0)
     msp = doc.modelspace()
 
-    # v1.9-B.1: sample-based elevation pole (SOLID checkerboard, not HATCH).
+    # v1.9-B.2: sample-based elevation pole (SOLID checkerboard, not HATCH).
     # Sample: 2.50 mm total width, 1.25 mm half-width, 10 mm vertical bands.
     # Position relative to the profile origin, inside the left label column.
     # Keep it out of the station-data graph and the lower profile bands.
@@ -248,7 +248,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         pole_left = layout.origin_x + 30.25
         pole_mid = pole_left + 1.25
         pole_right = pole_left + 2.50
-        pole_bottom = layout.origin_y + options.plot_lower_y
+        pole_bottom = layout.origin_y + layout.band_top  # v1.9-B.2: connect to top of PROFILE_BAND
         pole_top = layout.origin_y + options.plot_upper_y
         stripe_h = 10.0
         if pole_top <= pole_bottom:
