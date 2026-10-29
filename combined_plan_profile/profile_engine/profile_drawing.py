@@ -59,6 +59,7 @@ class DrawingOptions:
     datum_safety_margin_m: float = 5.0
     sheet_start_sta: float | None = None
     sheet_end_sta: float | None = None
+    elevation_pole_solid: bool = False  # Combined PLAN/PROFILE opt-in; standalone unchanged
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -237,6 +238,38 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'ALIGNMENT_IP_TEXT', 7, 0)
     _layer(doc, 'ALIGNMENT_ELEMENT_TEXT', 7, 0)
     msp = doc.modelspace()
+
+    # v1.9-B.1: sample-based elevation pole (SOLID checkerboard, not HATCH).
+    # Sample: 2.50 mm total width, 1.25 mm half-width, 10 mm vertical bands.
+    # Position relative to the profile origin, inside the left label column.
+    # Keep it out of the station-data graph and the lower profile bands.
+    if options.elevation_pole_solid:
+        _layer(doc, 'ELEVATION_POLE', 7, 18)
+        pole_left = layout.origin_x + 30.25
+        pole_mid = pole_left + 1.25
+        pole_right = pole_left + 2.50
+        pole_bottom = layout.origin_y + options.plot_lower_y
+        pole_top = layout.origin_y + options.plot_upper_y
+        stripe_h = 10.0
+        if pole_top <= pole_bottom:
+            raise ValueError('표고 폴대 상단은 하단보다 높아야 합니다.')
+        # All stripes originate at the TOP, as in SAMPLE_ELEVATION_POLE.dxf.
+        count = math.ceil((pole_top - pole_bottom) / stripe_h - 1e-9)
+        for i in range(count):
+            yt = pole_top - i * stripe_h
+            yb = max(pole_bottom, yt - stripe_h)
+            if yt <= yb + 1e-8:
+                continue
+            xl, xr = ((pole_mid, pole_right) if i % 2 == 0
+                      else (pole_left, pole_mid))
+            # DXF SOLID order: top-left, top-right, bottom-left, bottom-right.
+            msp.add_solid([(xl, yt), (xr, yt), (xl, yb), (xr, yb)],
+                          dxfattribs={'layer': 'ELEVATION_POLE', 'color': 7})
+        for x in (pole_left, pole_mid, pole_right):
+            _line(msp, x, pole_bottom, x, pole_top, 'ELEVATION_POLE')
+        for i in range(count + 1):
+            y = max(pole_bottom, pole_top - i * stripe_h)
+            _line(msp, pole_left, y, pole_right, y, 'ELEVATION_POLE')
 
     def clipped(poly, fn, seg_start, seg_end):
         return ([(seg_start, fn.at(seg_start)[0])]
