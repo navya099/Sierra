@@ -1,0 +1,1 @@
+v1.8-A.3 IP라인 LWPOLYLINE 전체 선분의 PLAN 도각 교차 출력 및 PLAN 측점 캐시 최적화. 원본 IP교점선 짧은 LINE도 유지. 이전 v1.7.2 출력 정책 유지. 실행: python combined_plan_profile_v1_8a.py --plan ... --profile ... --start-sta 2000 --end-sta 3700 --sheet-length 700

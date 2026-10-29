@@ -8,13 +8,17 @@ from .profile_engine.profile_drawing import create_profile_drawing, DrawingOptio
 from .profile_engine.profile_calculator import read_ground_points
 from .profile_engine.dxf_reader import extract_profile
 from .combined_plan_profile_v1_7_core import generate, read_alignment
-from .plan_entities_v1_7 import render_plan_entities, DEFAULT_LAYERS
+from .plan_entities_v1_7 import render_plan_entities, DEFAULT_LAYERS, _station_of_point
 from .plan_ip_lines_v1_8a import render_ip_lines
 import ezdxf
+from datetime import datetime
+from time import perf_counter
 
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None):
+    t0=perf_counter()
     ground=read_ground_points(profile);vip=extract_profile(profile)
+    print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
     lo=max(ground[0][0],vip[0].sta)
     hi=min(ground[-1][0],vip[-1].sta)
     # PLAN측점과 PROFILE측점이 일치하도록 교집합 적용
@@ -26,18 +30,41 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         sheet_start_sta=start,sheet_end_sta=end)
     def render(doc,a,b,index):
         local=replace(options,sheet_start_sta=a,sheet_end_sta=b)
+        t0=perf_counter()
         create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
                                local,target_doc=doc)
+        print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
+    t0=perf_counter()
     source_doc=ezdxf.readfile(str(plan))
     fl_points, fl_distances = read_alignment(plan)
+    print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
+    # Project source station annotations only once; reuse across all sheets.
+    t0=perf_counter()
+    station_cache={}
+    station_layers={'km심볼','200심볼','km문자','200문자','보조측점'}
+    for ent in source_doc.modelspace():
+        layer=ent.dxf.layer.casefold()
+        if layer not in station_layers: continue
+        typ=ent.dxftype()
+        if layer=='보조측점' and typ=='LINE':
+            anchor=((ent.dxf.start.x+ent.dxf.end.x)/2,(ent.dxf.start.y+ent.dxf.end.y)/2)
+        elif typ=='CIRCLE': anchor=ent.dxf.center
+        elif typ in ('TEXT','MTEXT'): anchor=ent.dxf.insert
+        else: continue
+        station_cache[ent.dxf.handle]=_station_of_point(anchor,fl_points,fl_distances,station_origin)
+    print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
     def render_plan(doc,a,b,index,transform,angle):
+        t0=perf_counter()
         render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
                              sheet_start=a,sheet_end=b,fl_points=fl_points,
-                             fl_distances=fl_distances,station_origin=station_origin,
+                             fl_distances=fl_distances,station_origin=station_origin,station_cache=station_cache,
                              layers=tuple(x for x in DEFAULT_LAYERS if x.casefold()!='ip교점선'.casefold()))
+        print(f"[성능] {index}시트 PLAN 객체: {perf_counter()-t0:.2f}초",flush=True)
+        t0=perf_counter()
         render_ip_lines(source_doc,doc,transform,sheet_start=a,sheet_end=b,
                         fl_points=fl_points,fl_distances=fl_distances,
                         station_origin=station_origin)
+        print(f"[성능] {index}시트 IP교점선: {perf_counter()-t0:.2f}초",flush=True)
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,profile_hook=render,plan_hook=render_plan)
@@ -59,5 +86,16 @@ if __name__=="__main__":
     p.add_argument("--start-sta",type=float)
     p.add_argument("--end-sta",type=float)
     a=p.parse_args()
-    for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
-        a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta):print(item)
+    started_at = datetime.now()
+    started_tick = perf_counter()
+    print(f"[시작시간] {started_at:%Y-%m-%d %H:%M:%S}", flush=True)
+    try:
+        for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
+            a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta):
+            print(item, flush=True)
+    finally:
+        finished_at = datetime.now()
+        elapsed = perf_counter() - started_tick
+        minutes, seconds = divmod(elapsed, 60)
+        print(f"[완료시간] {finished_at:%Y-%m-%d %H:%M:%S}", flush=True)
+        print(f"[걸린시간] {int(minutes)}분 {seconds:.2f}초 (총 {elapsed:.2f}초)", flush=True)
