@@ -61,6 +61,7 @@ class DrawingOptions:
     sheet_end_sta: float | None = None
     elevation_pole_solid: bool = False  # Combined PLAN/PROFILE opt-in; standalone unchanged
     elevation_pole_labels: bool = False  # B.3: numeric labels from first datum segment
+    elevation_pole_at_datum_breaks: bool = False  # B.3.4 combined-only
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -244,9 +245,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     # Sample: 2.50 mm total width, 1.25 mm half-width, 10 mm vertical bands.
     # Position relative to the profile origin, inside the left label column.
     # Keep it out of the station-data graph and the lower profile bands.
-    if options.elevation_pole_solid:
+    def draw_elevation_pole(pole_left, datum_left, is_break=False):
         _layer(doc, 'ELEVATION_POLE', 7, 18)
-        pole_left = data_left  # v1.9-B.3.1: align pole left edge to band data boundary
         pole_mid = pole_left + 1.25
         pole_right = pole_left + 2.50
         pole_bottom = layout.origin_y + layout.band_top  # v1.9-B.2: connect to top of PROFILE_BAND
@@ -289,7 +289,6 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             # the left label column, so its labels refer to that datum only.
             # Subsequent datum breaks are already marked in the profile graph.
             _layer(doc, 'ELEVATION_POLE_TEXT', 7, 0)
-            datum_left = datum_segments[0].datum_el
             graph_datum_y = layout.origin_y + options.plot_lower_y
             el_bottom = datum_left + (pole_bottom - graph_datum_y) * options.vertical_scale / 1000.0
             el_top = datum_left + (pole_top - graph_datum_y) * options.vertical_scale / 1000.0
@@ -311,10 +310,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                       'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_LEFT)
             # Prevent misleading interpretation when a sheet has multiple
             # datum segments: explicitly identify the pole's datum.
-            if len(datum_segments) > 1:
+            if len(datum_segments) > 1 and not is_break:
                 _text(msp, f'기준 EL.{datum_left:.0f} (시점)', pole_left - 3.0,
                       pole_top + 5.0, 2.5, 'ELEVATION_POLE_TEXT',
                       align=TextEntityAlignment.MIDDLE_RIGHT)
+
+    if options.elevation_pole_solid:
+        draw_elevation_pole(data_left, datum_segments[0].datum_el)
 
     def clipped(poly, fn, seg_start, seg_end):
         return ([(seg_start, fn.at(seg_start)[0])]
@@ -399,6 +401,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             points = [(x, y0), (x, ym-7), (x-2.5, ym-3),
                       (x+2.5, ym+3), (x, ym+7), (x, y1)]
             msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
+            if options.elevation_pole_solid and options.elevation_pole_at_datum_breaks:
+                draw_elevation_pole(x, right.datum_el, is_break=True)
             _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
                   2.4, 'DATUM_LABEL')
             _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,

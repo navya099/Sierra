@@ -32,7 +32,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     if start<lo or end>hi:raise ValueError("PROFILE 범위를 벗어나는 측점")
     options=DrawingOptions(origin_x=35.,origin_y=70.,horizontal_scale=horizontal_scale,
         vertical_scale=vertical_scale,plot_lower_y=135.,plot_upper_y=235.,
-        sheet_start_sta=start,sheet_end_sta=end,elevation_pole_solid=True,elevation_pole_labels=True)
+        sheet_start_sta=start,sheet_end_sta=end,elevation_pole_solid=True,elevation_pole_labels=True,elevation_pole_at_datum_breaks=True)
     def render(doc,a,b,index):
         local=replace(options,sheet_start_sta=a,sheet_end_sta=b)
         t0=perf_counter()
