@@ -17,7 +17,7 @@ def format_scale(value: float) -> str:
     return f"{value:,.0f}" if float(value).is_integer() else f"{value:g}"
 
 
-AUTO_TAGS = frozenset({'TD_DWGNO', 'TB_STITL', 'SCALE', 'TD_DNAME_MAIN'})
+AUTO_TAGS = frozenset({'TD_DWGNO', 'TB_STITL', 'SCALE', 'TD_DNAME_MAIN', 'TB_MTITIL'})
 
 
 def load_titleblock_config(path):
@@ -40,8 +40,8 @@ def load_titleblock_config(path):
         key = tag.strip().upper()
         if key in AUTO_TAGS:
             raise ValueError(f'시트별 자동 속성은 JSON으로 덮어쓸 수 없습니다: {key}')
-        if value is None:
-            continue  # preserve original template value
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue  # preserve original template value for null / blank
         if not isinstance(value, str):
             raise ValueError(f'{key}: 값은 문자열 또는 null이어야 합니다.')
         if key in attrs:
@@ -66,10 +66,15 @@ def update_titleblock(doc, *, number: int, total: int, sheet_start: float,
         'TD_DNAME_MAIN': f'{drawing_title}({number})',
     }
     if custom_attributes:
+        dname = custom_attributes.get('TD_DNAME')
+        if isinstance(dname, str) and dname.strip():
+            updates['TB_MTITIL'] = f"{dname.strip()} {drawing_title}({number})"
         for tag, value in custom_attributes.items():
             key = tag.upper()
             if key in AUTO_TAGS:
                 raise ValueError(f'자동 속성 변경 금지: {key}')
+            if value is None or (isinstance(value, str) and not value.strip()):
+                continue
             updates[key] = value
     if project_name is not None:
         updates['TD_CNAME'] = project_name
