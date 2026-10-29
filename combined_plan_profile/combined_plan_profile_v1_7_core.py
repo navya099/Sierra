@@ -89,12 +89,34 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
             msp.add_text(f" V={vertical_scale:,.0f})", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
                 (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
         cy = (y0 + y1) / 2
-        if left_direction:
-            msp.add_text(left_direction, dxfattribs={"layer": layer, "height": 5.0, "rotation": 90}).set_placement(
-                (x0 + 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
-        if right_direction:
-            msp.add_text(right_direction, dxfattribs={"layer": layer, "height": 5.0, "rotation": 90}).set_placement(
-                (x1 - 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+        # Horizontal direction callouts inside each drawing frame.
+        # Left:  ◀ [서울쪽] ; Right: [부산쪽] ▶
+        # A SOLID triangular arrow uses ACI 7 (black on white CAD paper).
+        box_w, box_h, arrow_w, inset = 28.0, 11.0, 7.0, 7.0
+        def direction_callout(label, left_side):
+            if not label:
+                return
+            if left_side:
+                bx = x0 + inset + arrow_w
+                tip_x = bx - arrow_w
+                base_x = bx
+            else:
+                bx = x1 - inset - arrow_w - box_w
+                tip_x = bx + box_w + arrow_w
+                base_x = bx + box_w
+            by = cy - box_h / 2
+            msp.add_lwpolyline([(bx, by), (bx + box_w, by),
+                                (bx + box_w, by + box_h), (bx, by + box_h)],
+                               close=True, dxfattribs={"layer": layer})
+            # The SOLID vertex order is deliberately CAD-compatible.
+            msp.add_solid([(tip_x, cy), (base_x, cy - 4.0),
+                           (tip_x, cy), (base_x, cy + 4.0)],
+                          dxfattribs={"layer": layer, "color": 7})
+            msp.add_text(label, dxfattribs={"layer": layer, "height": 5.0,
+                                           "rotation": 0}).set_placement(
+                (bx + box_w / 2, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+        direction_callout(left_direction, True)
+        direction_callout(right_direction, False)
 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
