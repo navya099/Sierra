@@ -10,6 +10,13 @@ from ezdxf.math import Vec2
 PLAN_RECT=(35.,330.,811.,530.)
 PROFILE_RECT=(35.,70.,811.,315.)
 
+def read_fl_global_width(path):
+    """Read the source FL LWPOLYLINE Global Width in source drawing units."""
+    doc=ezdxf.readfile(str(path))
+    ents=[e for e in doc.modelspace().query("LWPOLYLINE") if e.dxf.layer.casefold()=="fl"]
+    if len(ents)!=1: raise ValueError(f"FL LWPOLYLINE 1개 필요: {len(ents)}개")
+    return float(ents[0].dxf.get("const_width", 0.0))
+
 def read_alignment(path):
     doc=ezdxf.readfile(str(path))
     ents=[e for e in doc.modelspace().query('LWPOLYLINE') if e.dxf.layer.casefold()=='fl']
@@ -58,6 +65,9 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None):
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     pts,ds=read_alignment(plan)
+    fl_global_width=read_fl_global_width(plan)
+    if not math.isfinite(fl_global_width) or fl_global_width < 0:
+        raise ValueError(f"FL GLOBAL_WIDTH 값이 올바르지 않습니다: {fl_global_width}")
     start=station_origin if start_sta is None else start_sta
     end=station_origin+ds[-1] if end_sta is None else end_sta
     if start<station_origin-1e-7 or end>station_origin+ds[-1]+1e-7:
@@ -95,13 +105,17 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         # 시트 경계에서 FL을 정확히 자른 후 도면 좌표로 변환
         station_list=[sa]+[station_origin+d for d in ds if sa+1e-8<station_origin+d<sb-1e-8]+[sb]
         segment_count=0
+        fl_sheet_width=fl_global_width*scale
         for a,b in zip(station_list,station_list[1:]):
             u=transform(position_at(a-station_origin,pts,ds))
             v=transform(position_at(b-station_origin,pts,ds))
             clipped=clip(u,v,PLAN_RECT)
             if clipped and math.dist(*clipped)>1e-8:
-                msp.add_line(*clipped,dxfattribs={'layer':'ZPP_PLAN_CENTER'})
+                # Use LWPOLYLINE, not LINE: AutoCAD Global Width is a polyline property.
+                msp.add_lwpolyline(clipped, dxfattribs={
+                    'layer':'ZPP_PLAN_CENTER', 'const_width':fl_sheet_width})
                 segment_count+=1
+        print(f"[FL GLOBAL_WIDTH] {number}시트: 원본={fl_global_width:g}, 출력={fl_sheet_width:g}, 구간={segment_count}",flush=True)
         if plan_hook is not None:
             plan_hook(doc, sa, sb, number, transform, angle)
         if profile_hook is not None:
