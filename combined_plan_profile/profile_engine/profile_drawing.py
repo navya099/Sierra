@@ -272,6 +272,17 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             y = max(pole_bottom, pole_top - i * stripe_h)
             _line(msp, pole_left, y, pole_right, y, 'ELEVATION_POLE')
 
+        # v1.9-B.3.2: original sample's vertical datum-reference note.
+        # Position relative to the pole's right edge, as in SAMPLE_ELEVATION_POLE.dxf.
+        _layer(doc, 'ELEVATION_POLE_NOTE', 7, 0)
+        _text(
+            msp,
+            '수준기면은 국토교통부 국토지리정보원 설정기면 0m를 100m로함.',
+            pole_right + 5.42, pole_bottom, 3.0,
+            'ELEVATION_POLE_NOTE', rotation=90,
+            align=TextEntityAlignment.LEFT,
+        )
+
         if options.elevation_pole_labels:
             # Use the EXACT inverse of ProfileLayout.elevation_y(), including
             # the datum at the left edge of the sheet. The pole is located in
