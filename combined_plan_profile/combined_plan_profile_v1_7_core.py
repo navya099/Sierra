@@ -90,11 +90,11 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
                 (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
         cy = (y0 + y1) / 2
         if left_direction:
-            msp.add_text(left_direction, dxfattribs={"layer": layer, "height": 3.0, "rotation": 90}).set_placement(
-                (x0 - 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            msp.add_text(left_direction, dxfattribs={"layer": layer, "height": 5.0, "rotation": 90}).set_placement(
+                (x0 + 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
         if right_direction:
-            msp.add_text(right_direction, dxfattribs={"layer": layer, "height": 3.0, "rotation": 90}).set_placement(
-                (x1 + 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            msp.add_text(right_direction, dxfattribs={"layer": layer, "height": 5.0, "rotation": 90}).set_placement(
+                (x1 - 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
@@ -115,15 +115,13 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     ranges=sheet_ranges(start,end,sheet_length)
     for number,(sa,sb) in enumerate(ranges,1):
         doc=ezdxf.readfile(str(template));msp=doc.modelspace();doc.header['$INSUNITS']=4
-        for name,color in [('ZPP_PLAN_CENTER',1),('ZPP_PLAN_AREA',3),('ZPP_PROFILE_AREA',5),('ZPP_GUIDE_LABEL',7)]:
+        for name,color in [('ZPP_PLAN_CENTER',1),('ZPP_PLAN_AREA',3),('ZPP_PROFILE_AREA',5)]:
             if name not in doc.layers:doc.layers.new(name,dxfattribs={'color':color})
         if guides:
             for name,r in [('PLAN',PLAN_RECT),('PROFILE',PROFILE_RECT)]:
                 x0,y0,x1,y1=r
                 msp.add_lwpolyline([(x0,y0),(x1,y0),(x1,y1),(x0,y1)],close=True,
                     dxfattribs={'layer':f'ZPP_{name}_AREA'})
-            msp.add_text(f"PLAN STA {sa:.3f} - {sb:.3f}",
-                dxfattribs={'layer':'ZPP_GUIDE_LABEL','height':4,'insert':(40,517)})
         # 기준방향은 시트 시작~종료점 벡터. 기존 DXF 회전이 아닌 신규 좌표 계산
         pa=position_at(sa-station_origin,pts,ds)
         pb=position_at(sb-station_origin,pts,ds)
