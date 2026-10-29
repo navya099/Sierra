@@ -246,7 +246,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     # Keep it out of the station-data graph and the lower profile bands.
     if options.elevation_pole_solid:
         _layer(doc, 'ELEVATION_POLE', 7, 18)
-        pole_left = layout.origin_x + 30.25
+        pole_left = data_left  # v1.9-B.3.1: align pole left edge to band data boundary
         pole_mid = pole_left + 1.25
         pole_right = pole_left + 2.50
         pole_bottom = layout.origin_y + layout.band_top  # v1.9-B.2: connect to top of PROFILE_BAND
