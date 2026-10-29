@@ -400,13 +400,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             ym = (y0 + y1) / 2
             points = [(x, y0), (x, ym-7), (x-2.5, ym-3),
                       (x+2.5, ym+3), (x, ym+7), (x, y1)]
-            msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
             if options.elevation_pole_solid and options.elevation_pole_at_datum_breaks:
-                draw_elevation_pole(x -2.5, right.datum_el, is_break=True)
-            _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
-                  2.4, 'DATUM_LABEL')
-            _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
-                  2.4, 'DATUM_LABEL')
+                # B.3.6: the new elevation pole replaces the legacy datum
+                # break zig-zag and its two EL labels in combined drawings.
+                draw_elevation_pole(x - 2.5, right.datum_el, is_break=True)
+            else:
+                # Keep the original representation for standalone PROFILE
+                # drawings where boundary poles are disabled.
+                msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
+                _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
+                      2.4, 'DATUM_LABEL')
+                _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
+                      2.4, 'DATUM_LABEL')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
