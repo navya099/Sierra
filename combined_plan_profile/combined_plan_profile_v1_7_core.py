@@ -3,6 +3,7 @@
 """
 from pathlib import Path
 import argparse, math, sys
+from time import perf_counter
 import ezdxf
 from ezdxf.math import Vec2
 
@@ -108,8 +109,12 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         path=out/f"종평면도({number}).dxf"
         if path.resolve() in (Path(template).resolve(),Path(plan).resolve()):
             raise ValueError("입력 파일 덮어쓰기 방지")
+        t0=perf_counter()
         doc.saveas(str(path))
+        print(f"[성능] {number}시트 DXF 저장: {perf_counter()-t0:.2f}초",flush=True)
+        t0=perf_counter()
         audit=ezdxf.readfile(str(path)).audit()
+        print(f"[성능] {number}시트 DXF 재읽기+감사: {perf_counter()-t0:.2f}초",flush=True)
         if audit.errors:raise RuntimeError(f"DXF 감사 오류 {len(audit.errors)}: {path}")
         results.append((path,sa,sb,segment_count))
     return results

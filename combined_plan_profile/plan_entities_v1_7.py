@@ -27,7 +27,7 @@ def _station_of_point(point, points, distances, station_origin):
 
 def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizontal_scale,
                          layers=DEFAULT_LAYERS, *, sheet_start=None, sheet_end=None,
-                         fl_points=None, fl_distances=None, station_origin=0.):
+                         fl_points=None, fl_distances=None, station_origin=0., station_cache=None):
     """Transform selected DXF modelspace entities; clip LINE, reject out-of-frame labels/symbols.
     Source entities in IP_Block_* are deliberately excluded: their absolute block coordinates
     and zero insertion require a separate safe block handler.
@@ -56,7 +56,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             else:
                 anchor = None
             if anchor is not None:
-                sta, offset = _station_of_point(anchor, fl_points, fl_distances, station_origin)
+                sta, offset = station_cache[e.dxf.handle] if station_cache is not None else _station_of_point(anchor, fl_points, fl_distances, station_origin)
                 if (sta is None or offset > 2.0 or
                     (sheet_start is not None and sta < sheet_start-1e-5) or
                     (sheet_end is not None and sta > sheet_end+1e-5)):
@@ -68,7 +68,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             if layer.casefold() == '보조측점'.casefold() and fl_points is not None:
                 midpoint = ((e.dxf.start.x+e.dxf.end.x)/2,
                             (e.dxf.start.y+e.dxf.end.y)/2)
-                sta, offset = _station_of_point(midpoint, fl_points, fl_distances, station_origin)
+                sta, offset = station_cache[e.dxf.handle] if station_cache is not None else _station_of_point(midpoint, fl_points, fl_distances, station_origin)
                 if (sta is None or offset > 2.0 or
                     (sheet_start is not None and sta < sheet_start-1e-5) or
                     (sheet_end is not None and sta > sheet_end+1e-5)):
