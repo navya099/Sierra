@@ -88,7 +88,7 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
                 (scale_x, mid_y + 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
             msp.add_text(f" V={vertical_scale:,.0f})", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
                 (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
-        cy = (y0 + y1) / 2
+        cy = (y0 + y1) / 2 + (75.0 if rect == PROFILE_RECT else 0.0)
         # Horizontal direction callouts inside each drawing frame.
         # Left:  ◀ [서울쪽] ; Right: [부산쪽] ▶
         # A SOLID triangular arrow uses ACI 7 (black on white CAD paper).
@@ -97,11 +97,11 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
             if not label:
                 return
             if left_side:
-                bx = x0 + inset + arrow_w
+                bx = x0 + inset + arrow_w - 10.0
                 tip_x = bx - arrow_w
                 base_x = bx
             else:
-                bx = x1 - inset - arrow_w - box_w
+                bx = x1 - inset - arrow_w - box_w + 10.0
                 tip_x = bx + box_w + arrow_w
                 base_x = bx + box_w
             by = cy - box_h / 2
