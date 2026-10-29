@@ -60,6 +60,7 @@ class DrawingOptions:
     sheet_start_sta: float | None = None
     sheet_end_sta: float | None = None
     elevation_pole_solid: bool = False  # Combined PLAN/PROFILE opt-in; standalone unchanged
+    elevation_pole_labels: bool = False  # B.3: numeric labels from first datum segment
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -239,7 +240,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'ALIGNMENT_ELEMENT_TEXT', 7, 0)
     msp = doc.modelspace()
 
-    # v1.9-B.2: sample-based elevation pole (SOLID checkerboard, not HATCH).
+    # v1.9-B.3: elevation pole SOLID + numeric elevation ticks.
     # Sample: 2.50 mm total width, 1.25 mm half-width, 10 mm vertical bands.
     # Position relative to the profile origin, inside the left label column.
     # Keep it out of the station-data graph and the lower profile bands.
@@ -270,6 +271,34 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         for i in range(count + 1):
             y = max(pole_bottom, pole_top - i * stripe_h)
             _line(msp, pole_left, y, pole_right, y, 'ELEVATION_POLE')
+
+        if options.elevation_pole_labels:
+            # Use the EXACT inverse of ProfileLayout.elevation_y(), including
+            # the datum at the left edge of the sheet. The pole is located in
+            # the left label column, so its labels refer to that datum only.
+            # Subsequent datum breaks are already marked in the profile graph.
+            _layer(doc, 'ELEVATION_POLE_TEXT', 7, 0)
+            datum_left = datum_segments[0].datum_el
+            graph_datum_y = layout.origin_y + options.plot_lower_y
+            el_bottom = datum_left + (pole_bottom - graph_datum_y) * options.vertical_scale / 1000.0
+            el_top = datum_left + (pole_top - graph_datum_y) * options.vertical_scale / 1000.0
+            # 8m corresponds to 20 drawing mm at V=400. For other scales,
+            # keep a minimum spacing of 18mm to avoid overlapping text.
+            nice_steps = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+            label_step = next((v for v in nice_steps if v * 1000.0 / options.vertical_scale >= 18.0), 1000)
+            for el in _multiples(el_bottom, el_top, label_step):
+                y = graph_datum_y + (el - datum_left) * 1000.0 / options.vertical_scale
+                if not pole_bottom - 1e-7 <= y <= pole_top + 1e-7:
+                    continue
+                _line(msp, pole_left - 3.0, y, pole_left, y, 'ELEVATION_POLE_TEXT')
+                _text(msp, f'{el:.2f}', pole_left - 4.0, y, 2.5,
+                      'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_RIGHT)
+            # Prevent misleading interpretation when a sheet has multiple
+            # datum segments: explicitly identify the pole's datum.
+            if len(datum_segments) > 1:
+                _text(msp, f'기준 EL.{datum_left:.0f} (시점)', pole_left - 3.0,
+                      pole_top + 5.0, 2.5, 'ELEVATION_POLE_TEXT',
+                      align=TextEntityAlignment.MIDDLE_RIGHT)
 
     def clipped(poly, fn, seg_start, seg_end):
         return ([(seg_start, fn.at(seg_start)[0])]
