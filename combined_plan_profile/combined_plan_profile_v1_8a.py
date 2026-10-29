@@ -11,6 +11,7 @@ from .combined_plan_profile_v1_7_core import generate, read_alignment
 from .plan_entities_v1_7 import render_plan_entities, DEFAULT_LAYERS, _station_of_point
 from .plan_ip_lines_v1_8a import render_ip_lines
 from .plan_ip_labels_v1_8b import render_ip_labels
+from .plan_vip_annotations import render_plan_vips
 # v1.8-B.1: IP text/table hook is integrated in render_plan().
 from .titleblock_attributes_v1_9a import load_titleblock_config
 import ezdxf
@@ -74,6 +75,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         t0=perf_counter()
         ip_labels=render_ip_labels(source_doc,doc,transform,angle,horizontal_scale)
         print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
+        vip_count=render_plan_vips(doc,vip,transform,sheet_start=a,sheet_end=b,
+                        fl_points=fl_points,fl_distances=fl_distances,station_origin=station_origin)
+        print(f"[평면 VIP/구배] {index}시트: {vip_count}개",flush=True)
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
