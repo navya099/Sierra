@@ -62,9 +62,34 @@ def sheet_ranges(start,end,length):
     if n>10000:raise ValueError("시트 10000장 초과")
     return [(start+i*length,min(end,start+(i+1)*length)) for i in range(n)]
 
+def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction="서울쪽", right_direction="부산쪽"):
+    """Draw titles and direction labels in sheet-paper millimetres (not source coordinates)."""
+    from ezdxf.enums import TextEntityAlignment
+    msp = doc.modelspace()
+    layer = "ZPP_SHEET_ANNOTATION"
+    if layer not in doc.layers:
+        doc.layers.new(layer, dxfattribs={"color": 7})
+    for rect, title in (
+        (PLAN_RECT, f"평면도(S={horizontal_scale:g})"),
+        (PROFILE_RECT, f"종단면도(V={vertical_scale:g})"),
+    ):
+        x0, y0, x1, y1 = rect
+        cx = (x0 + x1) / 2
+        # Titles are inside the upper edge, separated from the drawing content.
+        msp.add_text(title, dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+            (cx, y1 - 7.0), align=TextEntityAlignment.MIDDLE_CENTER)
+        cy = (y0 + y1) / 2
+        if left_direction:
+            msp.add_text(left_direction, dxfattribs={"layer": layer, "height": 3.0, "rotation": 90}).set_placement(
+                (x0 - 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+        if right_direction:
+            msp.add_text(right_direction, dxfattribs={"layer": layer, "height": 3.0, "rotation": 90}).set_placement(
+                (x1 + 7.0, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
-             vertical_scale=400., project_name=None, route_name=None, titleblock_config=None):
+             vertical_scale=400., project_name=None, route_name=None, titleblock_config=None,
+             left_direction="서울쪽", right_direction="부산쪽"):
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     pts,ds=read_alignment(plan)
     fl_global_width=read_fl_global_width(plan)
@@ -123,6 +148,7 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
             plan_hook(doc, sa, sb, number, transform, angle)
         if profile_hook is not None:
             profile_hook(doc, sa, sb, number)
+        draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction, right_direction)
         updated = update_titleblock(doc, number=number, total=len(ranges),
             sheet_start=sa, sheet_end=sb, horizontal_scale=horizontal_scale,
             vertical_scale=vertical_scale, project_name=project_name, route_name=route_name,

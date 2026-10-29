@@ -20,7 +20,8 @@ from time import perf_counter
 
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
-          project_name=None,route_name=None,titleblock_config_path=None):
+          project_name=None,route_name=None,titleblock_config_path=None,
+          left_direction="서울쪽",right_direction="부산쪽"):
     titleblock_config=load_titleblock_config(titleblock_config_path)
     t0=perf_counter()
     ground=read_ground_points(profile);vip=extract_profile(profile)
@@ -82,7 +83,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
          project_name=project_name,route_name=route_name,titleblock_config=titleblock_config,
-         profile_hook=render,plan_hook=render_plan)
+         profile_hook=render,plan_hook=render_plan,
+         left_direction=left_direction,right_direction=right_direction)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
@@ -104,6 +106,8 @@ if __name__=="__main__":
     p.add_argument("--route-name",default=None,help="도각 노선명 (미입력 시 원본 유지)")
     p.add_argument("--titleblock-config", type=Path, default=None,
                    help="JSON 도각 속성 설정 파일 (미입력 시 기존 동작 유지)")
+    p.add_argument("--left-direction",default="서울쪽",help="좌측 방향명")
+    p.add_argument("--right-direction",default="부산쪽",help="우측 방향명")
     a=p.parse_args()
     started_at = datetime.now()
     started_tick = perf_counter()
@@ -111,7 +115,8 @@ if __name__=="__main__":
     try:
         for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
             a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta,
-            a.project_name,a.route_name,a.titleblock_config):
+            a.project_name,a.route_name,a.titleblock_config,
+            a.left_direction,a.right_direction):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()
