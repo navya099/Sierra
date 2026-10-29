@@ -57,10 +57,11 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
     def render_plan(doc,a,b,index,transform,angle):
         t0=perf_counter()
-        render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
+        plan_counts=render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
                              sheet_start=a,sheet_end=b,fl_points=fl_points,
                              fl_distances=fl_distances,station_origin=station_origin,station_cache=station_cache,
                              layers=tuple(x for x in DEFAULT_LAYERS if x.casefold() not in ('ip교점선','ip문자')))
+        print(f"[곡선제원/인출선] {index}시트: { {k:v for k,v in plan_counts.items() if k.startswith('curve_')} }",flush=True)
         print(f"[성능] {index}시트 PLAN 객체: {perf_counter()-t0:.2f}초",flush=True)
         t0=perf_counter()
         render_ip_lines(source_doc,doc,transform,sheet_start=a,sheet_end=b,
