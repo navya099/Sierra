@@ -29,7 +29,7 @@ def _station_of_point(point, points, distances, station_origin):
             best_d2 = d2
     return best_station, math.sqrt(best_d2)
 
-_CURVE_STA = re.compile(r"(?i)\b(?:BC|EC|BTC|ETC|BCC|ECC|KA|KE|TS|SC|CS|ST)\s*[:=]\s*(?:(\d+)\s*km\s*)?(\d+(?:\.\d+)?)")
+_CURVE_STA = re.compile(r"(?i)\b(?:BC|EC|SP|PC|CP|PS|BTC|ETC|BCC|ECC|KA|KE|TS|SC|CS|ST)\s*[:=]\s*(?:(\d+)\s*km\s*)?(\d+(?:\.\d+)?)")
 
 def _curve_text_station(value):
     """Parse v9 labels such as EC=0km552.23 and BC=1km047.51."""
