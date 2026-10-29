@@ -12,13 +12,15 @@ from .plan_entities_v1_7 import render_plan_entities, DEFAULT_LAYERS, _station_o
 from .plan_ip_lines_v1_8a import render_ip_lines
 from .plan_ip_labels_v1_8b import render_ip_labels
 # v1.8-B.1: IP text/table hook is integrated in render_plan().
+from .titleblock_attributes_v1_9a import load_titleblock_config
 import ezdxf
 from datetime import datetime
 from time import perf_counter
 
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
-          project_name=None,route_name=None):
+          project_name=None,route_name=None,titleblock_config_path=None):
+    titleblock_config=load_titleblock_config(titleblock_config_path)
     t0=perf_counter()
     ground=read_ground_points(profile);vip=extract_profile(profile)
     print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
@@ -75,7 +77,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
-         project_name=project_name,route_name=route_name,profile_hook=render,plan_hook=render_plan)
+         project_name=project_name,route_name=route_name,titleblock_config=titleblock_config,
+         profile_hook=render,plan_hook=render_plan)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
@@ -95,6 +98,8 @@ if __name__=="__main__":
     p.add_argument("--end-sta",type=float)
     p.add_argument("--project-name",default=None,help="도각 사업명 (미입력 시 원본 유지)")
     p.add_argument("--route-name",default=None,help="도각 노선명 (미입력 시 원본 유지)")
+    p.add_argument("--titleblock-config", type=Path, default=None,
+                   help="JSON 도각 속성 설정 파일 (미입력 시 기존 동작 유지)")
     a=p.parse_args()
     started_at = datetime.now()
     started_tick = perf_counter()
@@ -102,7 +107,7 @@ if __name__=="__main__":
     try:
         for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
             a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta,
-            a.project_name,a.route_name):
+            a.project_name,a.route_name,a.titleblock_config):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()

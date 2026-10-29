@@ -64,7 +64,7 @@ def sheet_ranges(start,end,length):
 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
-             vertical_scale=400., project_name=None, route_name=None):
+             vertical_scale=400., project_name=None, route_name=None, titleblock_config=None):
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     pts,ds=read_alignment(plan)
     fl_global_width=read_fl_global_width(plan)
@@ -125,7 +125,9 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
             profile_hook(doc, sa, sb, number)
         updated = update_titleblock(doc, number=number, total=len(ranges),
             sheet_start=sa, sheet_end=sb, horizontal_scale=horizontal_scale,
-            vertical_scale=vertical_scale, project_name=project_name, route_name=route_name)
+            vertical_scale=vertical_scale, project_name=project_name, route_name=route_name,
+            drawing_title=(titleblock_config or {}).get("drawing_title", "종평면도"),
+            custom_attributes=(titleblock_config or {}).get("attributes", {}))
         print(f"[도각 속성] {number}시트: {updated}", flush=True)
         path=out/f"종평면도({number}).dxf"
         if path.resolve() in (Path(template).resolve(),Path(plan).resolve()):
