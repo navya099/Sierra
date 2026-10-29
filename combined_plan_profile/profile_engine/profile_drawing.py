@@ -301,9 +301,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 y = graph_datum_y + (el - datum_left) * 1000.0 / options.vertical_scale
                 if not pole_bottom - 1e-7 <= y <= pole_top + 1e-7:
                     continue
-                _line(msp, pole_left - 3.0, y, pole_left, y, 'ELEVATION_POLE_TEXT')
-                _text(msp, f'{el:.2f}', pole_left - 4.0, y, 2.5,
-                      'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_RIGHT)
+                # v1.9-B.3.3: SAMPLE_ELEVATION_POLE.dxf uses a 13.75 mm
+                # leader from the pole's left edge.  Its elevation TEXT has
+                # MIDDLE_LEFT alignment at the leader endpoint, 3 mm above
+                # the elevation line (sample: line y=240.25, align y=243.25).
+                label_x = pole_left - 13.75
+                _line(msp, label_x, y, pole_left, y, 'ELEVATION_POLE_TEXT')
+                _text(msp, f'{el:.2f}', label_x, y + 3.0, 2.5,
+                      'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_LEFT)
             # Prevent misleading interpretation when a sheet has multiple
             # datum segments: explicitly identify the pole's datum.
             if len(datum_segments) > 1:
