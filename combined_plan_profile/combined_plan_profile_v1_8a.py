@@ -18,6 +18,7 @@ import ezdxf
 from .structure_inputs_b8 import load_structures, load_drawing_settings
 from .plan_structure_renderer_b9 import build_structure_cache, render_structure_sheet
 from .vertical_curve_inputs_b10 import load_vertical_curve_csv
+from .vertical_curve_inputs_b11 import load_simple_vertical_curves
 from datetime import datetime
 from time import perf_counter
 
@@ -25,7 +26,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
           project_name=None,route_name=None,titleblock_config_path=None,
           left_direction="서울쪽",right_direction="부산쪽",
-          structures_csv=None,structure_settings_json=None,vertical_curve_csv=None):
+          structures_csv=None,structure_settings_json=None,vertical_curve_csv=None,
+          vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None):
     titleblock_config=load_titleblock_config(titleblock_config_path)
     structures=load_structures(structures_csv) if structures_csv else None
     structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
@@ -35,9 +37,21 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     ground=read_ground_points(profile);vip=extract_profile(profile)
     print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
     vc_lengths = {}
+    vc_sources = [("GUI CSV", vertical_curve_csv), ("측점 JSON", vertical_curve_sta_json),
+                  ("인덱스 JSON", vertical_curve_index_json), ("간편 CSV", vertical_curve_simple_csv)]
+    selected = [(label, path) for label, path in vc_sources if path is not None]
+    if len(selected) > 1:
+        raise ValueError("종곡선 입력 옵션은 한 번에 하나만 지정하세요: " + ", ".join(label for label,_ in selected))
     if vertical_curve_csv:
         vc_lengths, vc_alignment = load_vertical_curve_csv(vertical_curve_csv, vip)
         print(f"[B.10 종곡선] {len(vc_alignment.curves)}개 로드: " + ", ".join(f"VIP {c.vip_index} STA {c.vip_sta:.3f}, L={c.length:g}m, PVC={c.pvc_sta:.3f}, PVT={c.pvt_sta:.3f}" for c in vc_alignment.curves), flush=True)
+    elif selected:
+        label, path = selected[0]
+        mode = {"측점 JSON": "station-json", "인덱스 JSON": "index-json", "간편 CSV": "simple-csv"}[label]
+        vc_lengths, vc_alignment = load_simple_vertical_curves(path, vip, mode)
+        print(f"[B.11 종곡선 {label}] {len(vc_alignment.curves)}개 로드: " + ", ".join(
+            f"VIP {c.vip_index} STA {c.vip_sta:.3f}, L={c.length:g}m, PVC={c.pvc_sta:.3f}, PVT={c.pvt_sta:.3f}"
+            for c in vc_alignment.curves), flush=True)
     lo=max(ground[0][0],vip[0].sta)
     hi=min(ground[-1][0],vip[-1].sta)
     # PLAN측점과 PROFILE측점이 일치하도록 교집합 적용
@@ -125,6 +139,9 @@ if __name__=="__main__":
     p.add_argument("--left-direction",default="서울쪽",help="좌측 방향명")
     p.add_argument("--right-direction",default="부산쪽",help="우측 방향명")
     p.add_argument("--vertical-curve-csv",type=Path,help="원본 GUI에서 내보낸 vertical_curve_result.csv (선택)")
+    p.add_argument("--vertical-curve-sta-json",type=Path,help="VIP 측점(m): 종곡선 길이(m) JSON")
+    p.add_argument("--vertical-curve-index-json",type=Path,help="0부터 시작하는 VIP 인덱스: 종곡선 길이(m) JSON")
+    p.add_argument("--vertical-curve-simple-csv",type=Path,help="간편 CSV: VIP_STA,L 또는 VIP,L")
     p.add_argument("--structures-csv",type=Path,help="기존 구조물 GUI에서 저장한 CSV (미지정 시 B.7 동작 유지)")
     p.add_argument("--structure-settings-json",type=Path,help="거더/교각/터널/주석 설정 JSON (선택)")
     a=p.parse_args()
@@ -136,7 +153,8 @@ if __name__=="__main__":
             a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta,
             a.project_name,a.route_name,a.titleblock_config,
             a.left_direction,a.right_direction,
-            a.structures_csv,a.structure_settings_json,a.vertical_curve_csv):
+            a.structures_csv,a.structure_settings_json,a.vertical_curve_csv,
+            a.vertical_curve_sta_json,a.vertical_curve_index_json,a.vertical_curve_simple_csv):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()
