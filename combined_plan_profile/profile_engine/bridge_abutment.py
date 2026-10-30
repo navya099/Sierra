@@ -7,6 +7,7 @@ User confirmed 1 drawing unit = 1 metre; DXF INSUNITS metadata is inaccurate.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from .structure_profile_clip import clip_line_above
 from typing import Literal
 
 Point = tuple[float, float]
@@ -56,7 +57,7 @@ def draw_abutment(msp, origin_sta: float, origin_elevation: float,
 
 def draw_profile_abutments(msp, structures, settings, start, end, datum_segments,
                            elevation_at, display_sta, display_el, vertical_exaggeration,
-                           layer='BRIDGE_ABUTMENT'):
+                           layer='BRIDGE_ABUTMENT', clip_bottom_y=None):
     """Draw A1/A2 at global bridge ends; output-only Y exaggeration.
 
     Abutments are drawn only on the sheet containing their anchor station.
@@ -90,6 +91,8 @@ def draw_profile_abutments(msp, structures, settings, start, end, datum_segments
             for (ax,ay),(bx,by) in ABUTMENT_LINES:
                 a=(x0 + direction*ax, y0 + vertical_exaggeration*ay)
                 b=(x0 + direction*bx, y0 + vertical_exaggeration*by)
-                msp.add_line(a,b,dxfattribs={'layer':layer})
+                segment=(a,b) if clip_bottom_y is None else clip_line_above(a,b,clip_bottom_y)
+                if segment is not None:
+                    msp.add_line(*segment,dxfattribs={'layer':layer})
             count += 1
     return count

@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import math
 from .bridge_girder import span_ranges
+from .structure_profile_clip import clip_line_above, clip_polygon_above
 
 @dataclass(frozen=True)
 class PierSettings:
@@ -21,11 +22,11 @@ class PierSettings:
 
 def draw_profile_piers(msp, structures, girder_settings, pier_settings, start, end,
                        datum_segments, elevation_at, ground_at, display_sta,
-                       display_el, vertical_exaggeration, layer='BRIDGE_PIER'):
+                       display_el, vertical_exaggeration, layer='BRIDGE_PIER', clip_bottom_y=None):
     """Place one pier at each global internal EQUAL span boundary.
 
     A pier belongs to the sheet [start,end), except at the final drawing end.
-    The entire pier is placed on its anchor sheet, like abutments; no clipping.
+    The pier is placed on its anchor sheet and clipped above the profile band.
     """
     girder_settings.validate(); pier_settings.validate()
     if not math.isfinite(vertical_exaggeration) or vertical_exaggeration <= 0:
@@ -51,13 +52,21 @@ def draw_profile_piers(msp, structures, girder_settings, pier_settings, start, e
             def pt(x,z): return (x0+x, display_el(top,datum.datum_el)+vertical_exaggeration*(z-top))
             def rectangle(width,zlo,zhi):
                 w=width/2
-                msp.add_lwpolyline([pt(-w,zlo),pt(w,zlo),pt(w,zhi),pt(-w,zhi)],close=True,dxfattribs={'layer':layer})
+                points=[pt(-w,zlo),pt(w,zlo),pt(w,zhi),pt(-w,zhi)]
+                if clip_bottom_y is not None:
+                    points=clip_polygon_above(points,clip_bottom_y)
+                if points:
+                    msp.add_lwpolyline(points,close=True,dxfattribs={'layer':layer})
             rectangle(pier_settings.pier_width,footing_top,top)
             rectangle(pier_settings.footing_width,footing_top-pier_settings.footing_height,footing_top)
             # Cap boundary and two optional inner cylinder representation lines.
             w=pier_settings.pier_width/2
-            msp.add_line(pt(-w,cap_bottom),pt(w,cap_bottom),dxfattribs={'layer':layer})
+            def clipped_line(a,b):
+                segment=(a,b) if clip_bottom_y is None else clip_line_above(a,b,clip_bottom_y)
+                if segment is not None:
+                    msp.add_line(*segment,dxfattribs={'layer':layer})
+            clipped_line(pt(-w,cap_bottom),pt(w,cap_bottom))
             for fraction in (-0.35,0.35):
-                msp.add_line(pt(w*fraction,cap_bottom),pt(w*fraction,footing_top),dxfattribs={'layer':layer})
+                clipped_line(pt(w*fraction,cap_bottom),pt(w*fraction,footing_top))
             count+=1
     return count
