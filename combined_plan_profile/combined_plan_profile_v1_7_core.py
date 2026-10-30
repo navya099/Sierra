@@ -55,6 +55,53 @@ def clip(a,b,rect):
             if t0>t1:return None
     return ((a[0]+dx*t0,a[1]+dy*t0),(a[0]+dx*t1,a[1]+dy*t1))
 
+def make_plan_matchline_polygon(sheet_start, sheet_end, station_origin, pts, ds, transform,
+                                rect=PLAN_RECT, *, min_longitudinal_component=0.12):
+    """Keep top/bottom frame horizontal; replace vertical sides with FL-normal matchlines.
+
+    All geometry is in final sheet-paper coordinates. A near-horizontal matchline
+    cannot intersect both horizontal edges reliably: fail rather than invent a frame.
+    """
+    from bisect import bisect_right
+    ymin, ymax = rect[1], rect[3]
+    mid_y = (ymin + ymax) / 2
+    edges = []
+    for sta in (sheet_start, sheet_end):
+        s = max(0., min(sta - station_origin, ds[-1]))
+        i = min(bisect_right(ds, s) - 1, len(pts) - 2)
+        a, b = pts[i], pts[i+1]
+        vx, vy = b[0]-a[0], b[1]-a[1]
+        norm = math.hypot(vx, vy)
+        center = position_at(s, pts, ds)
+        origin = transform(center)
+        ahead = transform((center[0]+vx/norm, center[1]+vy/norm))
+        tx, ty = ahead[0]-origin[0], ahead[1]-origin[1]
+        length = math.hypot(tx, ty)
+        tx, ty = tx/length, ty/length
+        if abs(tx) < min_longitudinal_component:
+            raise ValueError(f"STA {sta:g}: Matchline이 상하단선과 거의 평행합니다. 시트 회전/분할을 조정하세요")
+        def at_y(y):
+            return origin[0] - (ty/tx) * (y-origin[1])
+        edges.append((at_y(ymin), at_y(ymax), origin, (tx,ty)))
+    (left_bottom,left_top,_,_), (right_bottom,right_top,_,_) = edges
+    if min(right_bottom-left_bottom, right_top-left_top) < 1e-5:
+        raise ValueError("Matchline 경계가 교차합니다. 시트 길이/회전을 조정하세요")
+    polygon = [(left_bottom,ymin),(right_bottom,ymin),
+               (right_top,ymax),(left_top,ymax)]
+    return polygon, edges
+
+
+def clip_to_plan_polygon(a, b, edges, rect=PLAN_RECT):
+    """Clip a segment to both horizontal bounds and both FL-normal station planes."""
+    from .plan_ip_lines_v1_8a import _clip_halfplane
+    segment = clip(a,b,(-1e12,rect[1],1e12,rect[3]))
+    if segment is None: return None
+    for (_,_,origin,tangent), keep_positive in zip(edges,(True,False)):
+        segment = _clip_halfplane(*segment,origin,tangent,keep_positive)
+        if segment is None: return None
+    return segment
+
+
 def sheet_ranges(start,end,length):
     if not (math.isfinite(start) and math.isfinite(end) and math.isfinite(length)) or end<=start or length<=0:
         raise ValueError("측점 범위와 시트 길이를 확인하세요")
@@ -140,10 +187,9 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         for name,color in [('ZPP_PLAN_CENTER',1),('ZPP_PLAN_AREA',3),('ZPP_PROFILE_AREA',5)]:
             if name not in doc.layers:doc.layers.new(name,dxfattribs={'color':color})
         if guides:
-            for name,r in [('PLAN',PLAN_RECT),('PROFILE',PROFILE_RECT)]:
-                x0,y0,x1,y1=r
-                msp.add_lwpolyline([(x0,y0),(x1,y0),(x1,y1),(x0,y1)],close=True,
-                    dxfattribs={'layer':f'ZPP_{name}_AREA'})
+            x0,y0,x1,y1=PROFILE_RECT
+            msp.add_lwpolyline([(x0,y0),(x1,y0),(x1,y1),(x0,y1)],close=True,
+                dxfattribs={'layer':'ZPP_PROFILE_AREA'})
         # 기준방향은 시트 시작~종료점 벡터. 기존 DXF 회전이 아닌 신규 좌표 계산
         pa=position_at(sa-station_origin,pts,ds)
         pb=position_at(sb-station_origin,pts,ds)
@@ -160,6 +206,11 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         def transform(p):
             dx,dy=p[0]-anchor[0],p[1]-anchor[1]
             return (cx+(dx*ca+dy*sa_s)*scale,cy+(-dx*sa_s+dy*ca)*scale)
+        polygon, matchline_edges = make_plan_matchline_polygon(
+            sa, sb, station_origin, pts, ds, transform)
+        if guides:
+            msp.add_lwpolyline(polygon, close=True,
+                               dxfattribs={'layer':'ZPP_PLAN_AREA'})
         # 시트 경계에서 FL을 정확히 자른 후 도면 좌표로 변환
         station_list=[sa]+[station_origin+d for d in ds if sa+1e-8<station_origin+d<sb-1e-8]+[sb]
         segment_count=0
@@ -167,7 +218,7 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         for a,b in zip(station_list,station_list[1:]):
             u=transform(position_at(a-station_origin,pts,ds))
             v=transform(position_at(b-station_origin,pts,ds))
-            clipped=clip(u,v,PLAN_RECT)
+            clipped=clip_to_plan_polygon(u,v,matchline_edges)
             if clipped and math.dist(*clipped)>1e-8:
                 # Use LWPOLYLINE, not LINE: AutoCAD Global Width is a polyline property.
                 msp.add_lwpolyline(clipped, dxfattribs={
