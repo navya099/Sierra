@@ -165,6 +165,59 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
         direction_callout(left_direction, True)
         direction_callout(right_direction, False)
 
+def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, angle):
+    """B.13: sheet-paper annotations; north assumes source DXF +Y is grid north.
+
+    Labels are inset from each oblique matchline, not tied to a vertical frame.
+    """
+    from ezdxf.enums import TextEntityAlignment
+    msp = doc.modelspace()
+    ml_layer = "ZPP_MATCHLINE_LABEL"
+    north_layer = "ZPP_NORTH_ARROW"
+    for layer in (ml_layer, north_layer):
+        if layer not in doc.layers:
+            doc.layers.new(layer, dxfattribs={"color": 7})
+
+    ymin, ymax = PLAN_RECT[1], PLAN_RECT[3]
+    # Top-band label anchors follow the true slanted matchline x(y).
+    label_y = ymax - 19.0
+    labels = ((sheet_start, number - 1, edges[0], True),
+              (sheet_end, number + 1, edges[1], False))
+    for sta, adjacent, edge, is_start in labels:
+        _, _, origin, tangent = edge
+        tx, ty = tangent
+        x_on_line = origin[0] - (ty / tx) * (label_y - origin[1])
+        # Label is horizontal, shifted toward the sheet interior.
+        x = x_on_line + (9.0 if is_start else -9.0)
+        align = TextEntityAlignment.MIDDLE_LEFT if is_start else TextEntityAlignment.MIDDLE_RIGHT
+        neighbor = f"종평면도({adjacent})" if 1 <= adjacent <= total else ("노선 시점" if is_start else "노선 종점")
+        km = int(sta // 1000)
+        remain = sta - km * 1000
+        text = f"{neighbor}  STA {km}+{remain:06.2f}"
+        msp.add_text(text, dxfattribs={"layer": ml_layer, "height": 3.0}).set_placement((x, label_y), align=align)
+
+    # Grid north: original +Y rotated into sheet coordinates by -angle.
+    # Position at the top center to avoid side matchline labels.
+    left_x = edges[0][1] + (edges[0][0] - edges[0][1]) * (48.0 / (ymax - ymin))
+    right_x = edges[1][1] + (edges[1][0] - edges[1][1]) * (48.0 / (ymax - ymin))
+    x0 = (left_x + right_x) / 2.0
+    y0 = ymax - 48.0
+    nx, ny = math.sin(angle), math.cos(angle)
+    length = 17.0
+    tip = (x0 + nx * length, y0 + ny * length)
+    base = (x0, y0)
+    msp.add_line(base, tip, dxfattribs={"layer": north_layer})
+    # Open arrowhead, sized in sheet millimeters.
+    wing = 4.0
+    back = 6.0
+    px, py = -ny, nx
+    msp.add_line(tip, (tip[0] - nx * back + px * wing, tip[1] - ny * back + py * wing), dxfattribs={"layer": north_layer})
+    msp.add_line(tip, (tip[0] - nx * back - px * wing, tip[1] - ny * back - py * wing), dxfattribs={"layer": north_layer})
+    msp.add_circle(base, radius=2.0, dxfattribs={"layer": north_layer})
+    msp.add_text("N", dxfattribs={"layer": north_layer, "height": 5.0}).set_placement(
+        (tip[0] + nx * 5.5, tip[1] + ny * 5.5), align=TextEntityAlignment.MIDDLE_CENTER)
+
+
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
              vertical_scale=400., project_name=None, route_name=None, titleblock_config=None,
@@ -230,6 +283,8 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         if profile_hook is not None:
             profile_hook(doc, sa, sb, number)
         draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction, right_direction)
+        draw_matchline_and_north(doc, sa, sb, number, len(ranges), matchline_edges, angle)
+        print(f"[B.13] {number}시트 Matchline 연결측점 및 정북 기호 배치", flush=True)
         updated = update_titleblock(doc, number=number, total=len(ranges),
             sheet_start=sa, sheet_end=sb, horizontal_scale=horizontal_scale,
             vertical_scale=vertical_scale, project_name=project_name, route_name=route_name,
