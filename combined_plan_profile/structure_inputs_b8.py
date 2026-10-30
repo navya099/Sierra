@@ -47,7 +47,7 @@ def load_drawing_settings(path):
     config=json.loads(Path(path).read_text(encoding='utf-8')) if path else {}
     if not isinstance(config,dict):
         raise ValueError('구조물 설정 JSON은 객체여야 합니다.')
-    allowed={'girder','pier','label','tunnel','portal','bridge_layer_colors'}
+    allowed={'girder','pier','label','tunnel','portal','bridge_layer_colors','plan'}
     extra=set(config)-allowed
     if extra: raise ValueError(f'지원하지 않는 구조물 설정: {sorted(extra)}')
     def values(key):

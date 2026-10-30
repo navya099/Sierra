@@ -16,6 +16,7 @@ from .plan_vip_annotations import render_plan_vips
 from .titleblock_attributes_v1_9a import load_titleblock_config
 import ezdxf
 from .structure_inputs_b8 import load_structures, load_drawing_settings
+from .plan_structure_renderer_b9 import build_structure_cache, render_structure_sheet
 from datetime import datetime
 from time import perf_counter
 
@@ -51,6 +52,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     source_doc=ezdxf.readfile(str(plan))
     fl_points, fl_distances = read_alignment(plan)
     print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
+    plan_structure_cache = build_structure_cache(structures, fl_points, fl_distances, station_origin, structure_settings_json) if structures else None
     # Project source station annotations only once; reuse across all sheets.
     t0=perf_counter()
     station_cache={}
@@ -85,6 +87,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         vip_count=render_plan_vips(doc,vip,transform,sheet_start=a,sheet_end=b,
                         fl_points=fl_points,fl_distances=fl_distances,station_origin=station_origin)
         print(f"[평면 VIP/구배] {index}시트: {vip_count}개",flush=True)
+        if plan_structure_cache is not None:
+            result=render_structure_sheet(doc,plan_structure_cache,transform,a,b,station_origin,fl_points,fl_distances)
+            print(f"[B.9 평면 구조물] {index}시트: {result}",flush=True)
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
