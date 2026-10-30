@@ -179,29 +179,38 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
             doc.layers.new(layer, dxfattribs={"color": 7})
 
     ymin, ymax = PLAN_RECT[1], PLAN_RECT[3]
-    # Top-band label anchors follow the true slanted matchline x(y).
-    label_y = ymax - 19.0
-    labels = ((sheet_start, number - 1, edges[0], True),
-              (sheet_end, number + 1, edges[1], False))
-    for sta, adjacent, edge, is_start in labels:
-        _, _, origin, tangent = edge
-        tx, ty = tangent
-        x_on_line = origin[0] - (ty / tx) * (label_y - origin[1])
-        # Label is horizontal, shifted toward the sheet interior.
-        x = x_on_line + (9.0 if is_start else -9.0)
-        align = TextEntityAlignment.MIDDLE_LEFT if is_start else TextEntityAlignment.MIDDLE_RIGHT
-        neighbor = f"종평면도({adjacent})" if 1 <= adjacent <= total else ("노선 시점" if is_start else "노선 종점")
-        km = int(sta // 1000)
-        remain = sta - km * 1000
-        text = f"{neighbor}  STA {km}+{remain:06.2f}"
-        msp.add_text(text, dxfattribs={"layer": ml_layer, "height": 3.0}).set_placement((x, label_y), align=align)
+    # Matchline labels are placed OUTSIDE each slanted polygon edge.
+    # Rotation follows the boundary itself (not the plan alignment).
+    label_y = (ymin + ymax) / 2.0  # B.15: matchline label at polygon vertical midpoint
+    labels = ((sheet_start, edges[0], True), (sheet_end, edges[1], False))
+    for sta, edge, is_start in labels:
+        xb, xt, origin, tangent = edge
+        dx, dy = xt - xb, ymax - ymin
+        norm = math.hypot(dx, dy)
+        # Left exterior / right exterior unit normals for bottom-to-top edge.
+        outward = (-dy / norm, dx / norm) if is_start else (dy / norm, -dx / norm)
+        x_on_line = origin[0] - (tangent[1] / tangent[0]) * (label_y - origin[1])
+        x = x_on_line + outward[0] * 8.0
+        y = label_y + outward[1] * 8.0
+        km = int(math.floor((sta + 1e-7) / 1000.0))
+        remain = sta - km * 1000.0
+        if abs(remain) < 0.005:
+            remain = 0.0
+        text = f"Matchline STA {km}km{remain:06.2f}"
+        rotation = math.degrees(math.atan2(dy, dx))
+        # Keep text upright; still parallel to the matchline.
+        if 90.0 < rotation <= 270.0:
+            rotation -= 180.0
+        msp.add_text(text, dxfattribs={"layer": ml_layer, "height": 3.0,
+                                       "rotation": rotation}).set_placement(
+            (x, y), align=TextEntityAlignment.MIDDLE_CENTER)
 
-    # Grid north: original +Y rotated into sheet coordinates by -angle.
-    # Position at the top center to avoid side matchline labels.
-    left_x = edges[0][1] + (edges[0][0] - edges[0][1]) * (48.0 / (ymax - ymin))
-    right_x = edges[1][1] + (edges[1][0] - edges[1][1]) * (48.0 / (ymax - ymin))
-    x0 = (left_x + right_x) / 2.0
-    y0 = ymax - 48.0
+    # North arrow: upper-right INSIDE the plan polygon, with clearance for
+    # the arrowhead and N glyph, including when the plan rotates.
+    arrow_y = ymax - 29.0
+    right_x = edges[1][1] + (edges[1][0] - edges[1][1]) * ((ymax - arrow_y) / (ymax - ymin))
+    x0 = right_x - 32.0
+    y0 = arrow_y
     nx, ny = math.sin(angle), math.cos(angle)
     length = 17.0
     tip = (x0 + nx * length, y0 + ny * length)
