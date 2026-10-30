@@ -15,14 +15,20 @@ from .plan_vip_annotations import render_plan_vips
 # v1.8-B.1: IP text/table hook is integrated in render_plan().
 from .titleblock_attributes_v1_9a import load_titleblock_config
 import ezdxf
+from .structure_inputs_b8 import load_structures, load_drawing_settings
 from datetime import datetime
 from time import perf_counter
 
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
           project_name=None,route_name=None,titleblock_config_path=None,
-          left_direction="서울쪽",right_direction="부산쪽"):
+          left_direction="서울쪽",right_direction="부산쪽",
+          structures_csv=None,structure_settings_json=None):
     titleblock_config=load_titleblock_config(titleblock_config_path)
+    structures=load_structures(structures_csv) if structures_csv else None
+    structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
+    if structures is not None:
+        print(f"[B.8 구조물] {len(structures)}개 로드 (교량 {sum(x.kind=='BRIDGE' for x in structures)}, 터널 {sum(x.kind=='TUNNEL' for x in structures)})",flush=True)
     t0=perf_counter()
     ground=read_ground_points(profile);vip=extract_profile(profile)
     print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
@@ -39,7 +45,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         local=replace(options,sheet_start_sta=a,sheet_end_sta=b)
         t0=perf_counter()
         create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
-                               local,target_doc=doc)
+                               local,structures=structures,target_doc=doc,**structure_kwargs)
         print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
     t0=perf_counter()
     source_doc=ezdxf.readfile(str(plan))
@@ -108,6 +114,8 @@ if __name__=="__main__":
                    help="JSON 도각 속성 설정 파일 (미입력 시 기존 동작 유지)")
     p.add_argument("--left-direction",default="서울쪽",help="좌측 방향명")
     p.add_argument("--right-direction",default="부산쪽",help="우측 방향명")
+    p.add_argument("--structures-csv",type=Path,help="기존 구조물 GUI에서 저장한 CSV (미지정 시 B.7 동작 유지)")
+    p.add_argument("--structure-settings-json",type=Path,help="거더/교각/터널/주석 설정 JSON (선택)")
     a=p.parse_args()
     started_at = datetime.now()
     started_tick = perf_counter()
@@ -116,7 +124,8 @@ if __name__=="__main__":
         for item in build(a.template,a.plan,a.profile,a.output_dir,a.sheet_length,
             a.horizontal_scale,a.vertical_scale,a.station_origin,a.start_sta,a.end_sta,
             a.project_name,a.route_name,a.titleblock_config,
-            a.left_direction,a.right_direction):
+            a.left_direction,a.right_direction,
+            a.structures_csv,a.structure_settings_json):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()
