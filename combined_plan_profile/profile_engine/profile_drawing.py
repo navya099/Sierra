@@ -132,7 +132,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     raw_plan = PiecewiseLinear(plan_points)
     vc_alignment = None
     if vertical_curve_lengths:
-        from vertical_curve import VerticalAlignment
+        from .vertical_curve import VerticalAlignment
         vc_alignment = VerticalAlignment(plan_points, vertical_curve_lengths)
         # Include exact PVC/PVT and extrema, with dense parabolic vertices.
         stations = {s for s, _ in plan_points}
