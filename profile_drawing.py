@@ -16,7 +16,7 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
-from profile_transform import ProfileTransform
+from profile_transform import ProfileTransform, DrawingMode
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
 from bridge_girder import GirderSettings, draw_bridge_girders
@@ -47,6 +47,8 @@ class DrawingOptions:
     vip_elevation_decimals: int = 2
     vertical_scale: float = 400.0  # 1:V, reference horizontal scale 1:1000
     horizontal_scale: float = 1000.0
+    drawing_mode: DrawingMode = DrawingMode.REPORT  # legacy output remains default
+    vertical_exaggeration_enabled: bool = True
     origin_x: float = 0.0
     origin_y: float = 0.0
     start_margin: float = 10.0  # output drawing units (mm)
@@ -166,6 +168,12 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     sheet_plan = sheet_vertices(plan_render_points, rendered_plan)
 
     # A datum change affects profile geometry only, never the band or stationing.
+    # Effective Y units/m must drive the datum window, not the raw V denominator.
+    policy = ProfileTransform(horizontal_scale=options.horizontal_scale,
+                              vertical_scale=options.vertical_scale,
+                              mode=options.drawing_mode,
+                              vertical_exaggeration_enabled=options.vertical_exaggeration_enabled)
+    effective_vertical_scale = 1000.0 / policy.y_units_per_metre
     layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
     graph_base_y = layout.origin_y + options.plot_lower_y
     if options.auto_datum and options.graph_bottom is not None:
@@ -173,7 +181,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     if options.auto_datum:
         datum_config = DatumConfig(
             horizontal_scale=options.horizontal_scale,
-            vertical_scale=options.vertical_scale,
+            vertical_scale=effective_vertical_scale,
             plot_lower_y=options.plot_lower_y,
             plot_upper_y=options.plot_upper_y,
             datum_step_m=options.datum_step_m,
@@ -198,6 +206,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         origin_x=layout.origin_x, origin_y=layout.origin_y,
         label_column_width=layout.label_column_width,
         start_margin=options.start_margin, plot_lower_y=options.plot_lower_y,
+        mode=options.drawing_mode,
+        vertical_exaggeration_enabled=options.vertical_exaggeration_enabled,
     )
 
     def display_el(el, datum_el):
@@ -218,7 +228,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     bottom = layout.origin_y
     factor = transform.vertical_exaggeration
     doc = ezdxf.new('R2010')
-    doc.header['$INSUNITS'] = 4  # millimetres: output paper-space geometry
+    doc.header['$INSUNITS'] = (6 if policy.mode is DrawingMode.CAD else 4)  # CAD metres; report mm
     doc.styles.new('KOREAN', dxfattribs={'font': 'malgun.ttf'})
     _layer(doc, 'GROUND_PROFILE', 8, 0)
     _layer(doc, 'PLAN_PROFILE', 1, 100)
@@ -586,6 +596,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'grade_rule_y': grade_rule_y, 'distance_rule_y': distance_rule_y,
         'vip_circle_count': len(circle_stations),
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
+        'drawing_mode': policy.mode.value, 'vertical_exaggeration_enabled': options.vertical_exaggeration_enabled,
         'plot_lower_y': ylo, 'plot_upper_y': yhi,
         'datum_segment_count': len(datum_segments),
         **alignment_info,
