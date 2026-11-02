@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "name": "CAD H25000/V5000 overview",
+  "mode": "cad",
+  "horizontal_scale": 25000,
+  "vertical_scale": 5000,
+  "standard_type": "overview",
+  "status": "provisional",
+  "layout": {
+    "sheet": {
+      "origin_x": 0,
+      "origin_y": 0,
+      "label_column_width": 40,
+      "start_margin": 10,
+      "end_margin": 10
+    },
+    "profile": {
+      "plot_lower_y": 150,
+      "plot_upper_y": 250,
+      "datum_step_m": 10,
+      "datum_safety_margin_m": 5
+    },
+    "band": {
+      "alignment_height": 20,
+      "ground_height": 20,
+      "design_height": 20,
+      "fill_height": 15,
+      "cut_height": 15,
+      "distance_rule_offset": 20,
+      "grade_rule_offset": 40
+    },
+    "text": {
+      "data_text_height": 2.4,
+      "label_text_height": 5,
+      "datum_text_height": 2.4,
+      "vip_text_height": 2.0,
+      "annotation_row_height": 6
+    },
+    "symbols": {
+      "vip_circle_radius": 8,
+      "datum_break_width": 2.5,
+      "datum_break_height": 7
+    },
+    "stations": {
+      "station_interval": 500,
+      "major_interval": 5000,
+      "band_interval": 500,
+      "alignment_station_interval": 5000
+    }
+  },
+  "visibility": {
+    "minor_station_labels": false,
+    "vertical_curve_details": false,
+    "pier_details": false,
+    "datum_labels": true,
+    "alignment_band": true,
+    "ground_profile": true,
+    "design_profile": true
+  },
+  "notes": "S3-D1 data only; not yet wired into DXF. Non-1000 layout dimensions are temporary baseline copies pending S3-D3/D5."
+}
