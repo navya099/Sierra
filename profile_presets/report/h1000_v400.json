@@ -65,5 +65,21 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D1 extracted baseline dimensions; rendering remains unchanged until S3-D2."
+  "notes": "S3-D1 extracted baseline dimensions; rendering remains unchanged until S3-D2.",
+  "visibility_policy": {
+    "enabled": false,
+    "minor_grid": true,
+    "vertical_curve_annotations": true,
+    "vip_annotations": true,
+    "datum_labels": true,
+    "alignment_geometry": true,
+    "ground_profile": true,
+    "design_profile": true,
+    "bridge_piers": true,
+    "bridge_abutments": true,
+    "bridge_girders": true,
+    "structure_labels": true,
+    "tunnel_portals": true,
+    "tunnel_bodies": true
+  }
 }

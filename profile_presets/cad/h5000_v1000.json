@@ -10,7 +10,7 @@
     "sheet": {
       "origin_x": 0,
       "origin_y": 0,
-      "label_column_width": 400,
+      "label_column_width": 40,
       "start_margin": 10,
       "end_margin": 10
     },
@@ -65,5 +65,21 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D1 data only; not yet wired into DXF. Non-1000 layout dimensions are temporary baseline copies pending S3-D3/D5."
+  "notes": "S3-D1 data only; not yet wired into DXF. Non-1000 layout dimensions are temporary baseline copies pending S3-D3/D5.",
+  "visibility_policy": {
+    "enabled": false,
+    "minor_grid": true,
+    "vertical_curve_annotations": true,
+    "vip_annotations": true,
+    "datum_labels": true,
+    "alignment_geometry": true,
+    "ground_profile": true,
+    "design_profile": true,
+    "bridge_piers": true,
+    "bridge_abutments": true,
+    "bridge_girders": true,
+    "structure_labels": true,
+    "tunnel_portals": true,
+    "tunnel_bodies": true
+  }
 }

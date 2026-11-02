@@ -73,6 +73,19 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
     for key in REQUIRED_VISIBILITY:
         if type(visibility.get(key)) is not bool:
             raise ValueError(f'visibility.{key}: boolean required')
+    # S3-D4 policy is optional to preserve legacy user presets.
+    policy = data.get('visibility_policy')
+    if policy is not None:
+        keys = ('enabled', 'minor_grid', 'vertical_curve_annotations',
+                'vip_annotations', 'datum_labels', 'alignment_geometry',
+                'ground_profile', 'design_profile', 'bridge_piers',
+                'bridge_abutments', 'bridge_girders', 'structure_labels',
+                'tunnel_portals', 'tunnel_bodies')
+        if not isinstance(policy, dict) or set(policy) != set(keys):
+            raise ValueError('visibility_policy: exact S3-D4 keys required')
+        for key in keys:
+            if type(policy[key]) is not bool:
+                raise ValueError(f'visibility_policy.{key}: boolean required')
     if data.get('status') not in ('baseline', 'provisional'):
         raise ValueError('status must be baseline or provisional')
     return True

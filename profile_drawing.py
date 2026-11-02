@@ -627,6 +627,34 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         else:
             doc.layers.get(layer_name).dxf.color=color
 
+    # S3-D4: opt-in, per-preset entity visibility. No effect on S3-D3 baseline.
+    visibility_policy = (preset or {}).get('visibility_policy', {})
+    if visibility_policy.get('enabled', False):
+        layer_groups = {
+            'minor_grid': ('GRID_MINOR',),
+            'vertical_curve_annotations': (
+                'VERTICAL_CURVE_ORDINATE_TEXT', 'VERTICAL_CURVE_ORDINATE_LINE',
+                'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT', 'VIP_TO_GRID_DISTANCE_TEXT',
+                'VIP_TO_GRID_DISTANCE_ARROW'),
+            'vip_annotations': ('VIP_ANNOTATION', 'VIP_MARKER', 'VIP_DISTNACE_LINE'),
+            'datum_labels': ('DATUM_LABEL',),
+            'alignment_geometry': ('ALIGNMENT_CURVE', 'ALIGNMENT_STRAIGHT',
+                                   'ALIGNMENT_IP_TEXT', 'ALIGNMENT_ELEMENT_TEXT'),
+            'ground_profile': ('GROUND_PROFILE',),
+            'design_profile': ('PLAN_PROFILE',),
+            'bridge_piers': ('BRIDGE_PIER',),
+            'bridge_abutments': ('BRIDGE_ABUTMENT',),
+            'bridge_girders': ('BRIDGE_GIRDER',),
+            'structure_labels': ('STRUCTURE_LABEL',),
+            'tunnel_portals': ('TUNNEL_PORTAL',),
+            'tunnel_bodies': ('TUNNEL_BODY', 'TUNNEL_INNER'),
+        }
+        hidden_layers = {layer for key, layers in layer_groups.items()
+                         if not visibility_policy[key] for layer in layers}
+        for entity in list(msp):
+            if entity.dxf.layer in hidden_layers:
+                msp.delete_entity(entity)
+
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
     tmp = output.with_name(output.stem + '.tmp.dxf')
