@@ -67,6 +67,18 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
                     'structure_clearance', 'profile_plot_height', 'datum_label_offset'):
             _number(placement.get(key), f'layout.placement.{key}',
                     positive=(key == 'profile_plot_height'))
+    expansion = layout.get('expansion')
+    if expansion is not None:
+        if not isinstance(expansion, dict) or set(expansion) != {
+            'enabled', 'band_height_factor', 'label_column_width',
+            'text_height_factor', 'profile_plot_height', 'use_placement_clearance'}:
+            raise ValueError('layout.expansion: exact S3-D5 keys required')
+        if type(expansion['enabled']) is not bool or type(expansion['use_placement_clearance']) is not bool:
+            raise ValueError('layout.expansion flags must be boolean')
+        for key in ('band_height_factor','label_column_width','text_height_factor','profile_plot_height'):
+            _number(expansion[key], 'layout.expansion.'+key, positive=True)
+        if expansion['enabled'] and expansion['use_placement_clearance'] and placement is None:
+            raise ValueError('layout.expansion requires layout.placement for clearance')
     visibility = data.get('visibility')
     if not isinstance(visibility, dict):
         raise ValueError('visibility required')

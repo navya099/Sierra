@@ -54,6 +54,14 @@
       "structure_clearance": 10.0,
       "profile_plot_height": 100.0,
       "datum_label_offset": 12.0
+    },
+    "expansion": {
+      "enabled": true,
+      "band_height_factor": 5.0,
+      "label_column_width": 200.0,
+      "text_height_factor": 5.0,
+      "profile_plot_height": 500.0,
+      "use_placement_clearance": true
     }
   },
   "visibility": {
@@ -65,7 +73,7 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D1 data only; not yet wired into DXF. Non-1000 layout dimensions are temporary baseline copies pending S3-D3/D5.",
+  "notes": "S3-D5 optional expansion; values for non-1000 are provisional, not sample-calibrated. Enable explicitly after reviewing CAD/REPORT units.",
   "visibility_policy": {
     "enabled": false,
     "minor_grid": true,

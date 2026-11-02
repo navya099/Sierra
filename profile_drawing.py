@@ -131,6 +131,40 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             band_interval=p['stations']['band_interval'],
             alignment_station_interval=p['stations']['alignment_station_interval'])
 
+    # S3-D5: optional whole-layout expansion. Values are drawing-space dimensions,
+    # independent of engineering station/elevation coordinate transforms.
+    expansion = preset['layout'].get('expansion') if preset else None
+    if expansion and expansion['enabled']:
+        from copy import deepcopy
+        preset = deepcopy(preset)  # never mutate the caller's preset
+        layout_cfg = preset['layout']
+        band_cfg = layout_cfg['band']
+        text_cfg = layout_cfg['text']
+        band_factor = expansion['band_height_factor']
+        for key in ('alignment_height', 'ground_height', 'design_height',
+                    'fill_height', 'cut_height', 'distance_rule_offset', 'grade_rule_offset'):
+            band_cfg[key] *= band_factor
+        layout_cfg['sheet']['label_column_width'] = expansion['label_column_width']
+        for key in ('data_text_height', 'label_text_height', 'datum_text_height',
+                    'vip_text_height', 'annotation_row_height'):
+            text_cfg[key] *= expansion['text_height_factor']
+        options = replace(options, annotation_row_height=text_cfg['annotation_row_height'])
+        # Expansion drives graph height and upper limit together; it never scales
+        # the actual profile ordinates (those belong to ProfileTransform).
+        profile_cfg = layout_cfg['profile']
+        lower = profile_cfg['plot_lower_y']
+        if expansion['use_placement_clearance']:
+            placement_cfg = layout_cfg['placement']
+            band_top = sum(band_cfg[k] for k in ('alignment_height','ground_height',
+                                                  'design_height','fill_height','cut_height'))
+            lower = max(lower, band_top + placement_cfg['band_to_profile_gap']
+                        + placement_cfg['reserved_structure_depth']
+                        + placement_cfg['structure_clearance'])
+        options = replace(options, plot_lower_y=lower,
+                          plot_upper_y=lower + expansion['profile_plot_height'])
+        # S3-D3 placement must not apply a second time after S3-D5 expansion.
+        layout_cfg['placement']['enabled'] = False
+
     # S3-D3: opt-in placement. Baseline presets keep exact historical coordinates.
     placement = preset['layout'].get('placement') if preset else None
     if placement and placement['enabled']:
