@@ -115,8 +115,22 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     options = options or DrawingOptions()
     preset = options.layout_preset
     if preset is not None:
-        validate_preset(preset, expected_mode=options.drawing_mode.value,
-                        expected_scales=(options.horizontal_scale, options.vertical_scale))
+        from profile_transform import DrawingMode
+
+        mode = (
+            options.drawing_mode.value
+            if isinstance(options.drawing_mode, DrawingMode)
+            else options.drawing_mode
+        )
+
+        validate_preset(
+            preset,
+            expected_mode=mode,
+            expected_scales=(
+                options.horizontal_scale,
+                options.vertical_scale
+            )
+        )
         p = preset['layout']
         options = replace(options,
             origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],

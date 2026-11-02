@@ -20,7 +20,7 @@ import ezdxf
 
 from dxf_watcher import DXFWatcher
 from profile_scale import ProfileScale
-from profile_drawing import DrawingOptions, create_profile_drawing
+from profile_drawing import DrawingOptions, create_profile_drawing, options_with_preset
 from final_plan_vip import create_final_plan
 from vertical_curve import VerticalAlignment
 from structure_gui import StructureEditor
@@ -790,36 +790,66 @@ class AlignmentGUI:
             self.export_button.configure(state='normal')
             messagebox.showerror('거더 출력 설정 오류', str(exc))
             return
+
         def work():
             successes, failures = [], []
+
             if export_profile:
                 try:
+                    # S3-D5.1: GUI에서 선택한 모드/축척에 맞는 프리셋 로드
+                    profile_options = options_with_preset(drawing_options)
+
+                    print("[S3-D5.1] mode:", profile_options.drawing_mode)
+                    print("[S3-D5.1] H:", profile_options.horizontal_scale)
+                    print("[S3-D5.1] V:", profile_options.vertical_scale)
+                    print("[S3-D5.1] preset:", profile_options.layout_preset)
+
+                    if profile_options.layout_preset:
+                        print(
+                            "[S3-D5.1] expansion:",
+                            profile_options.layout_preset["layout"]["expansion"]
+                        )
+
                     if split_length is None:
-                        result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
-                                                        vertical_curve_lengths=vc_lengths_by_index,
-                                                        structures=structures, girder_settings=girder_settings, pier_settings=pier_settings, bridge_layer_colors=bridge_layer_colors, label_settings=label_settings, tunnel_settings=tunnel_settings)
-                        successes.append(('종평면도', str(result['output']), len(vips)))
+                        result = create_profile_drawing(
+                            source,
+                            folder / "final_result.dxf",
+                            profile_options,
+                            vertical_curve_lengths=vc_lengths_by_index,
+                            structures=structures,
+                            girder_settings=girder_settings,
+                            pier_settings=pier_settings,
+                            bridge_layer_colors=bridge_layer_colors,
+                            label_settings=label_settings,
+                            tunnel_settings=tunnel_settings
+                        )
+                        successes.append(
+                            ("종평면도", str(result["output"]), len(vips))
+                        )
+
                     else:
                         from profile_split import export_split_profiles
-                        results = export_split_profiles(source, folder, split_length, drawing_options, vc_lengths_by_index,
-                                                        structures, girder_settings, pier_settings, bridge_layer_colors, label_settings, tunnel_settings)
-                        successes.append((f'종평면도 {len(results)}장 분할', str(folder), len(vips)))
+
+                        results = export_split_profiles(
+                            source,
+                            folder,
+                            split_length,
+                            profile_options,
+                            vc_lengths_by_index,
+                            structures,
+                            girder_settings,
+                            pier_settings,
+                            bridge_layer_colors,
+                            label_settings,
+                            tunnel_settings
+                        )
+                        successes.append(
+                            (f"종평면도 {len(results)}장 분할", str(folder), len(vips))
+                        )
+
                 except Exception as exc:
-                    failures.append(('종평면도', str(exc)))
-            if export_plan:
-                try:
-                    placed = create_final_plan(plan_source, source, folder / 'final_plan_result.dxf',
-                                               vips=vips, structures=structures,
-                                               bridge_nominal_span=plan_bridge_span,
-                                               bridge_plan_section=plan_bridge_section,
-                                               bridge_plan_pier_settings=plan_bridge_pier,
-                                               bridge_abutment_plan_dxf=plan_bridge_abutment,
-                                               tunnel_plan_settings=tunnel_settings,
-                                               plan_label_settings=plan_label_settings,
-                                               label_settings=label_settings)
-                    successes.append(('최종 평면도', str(folder / 'final_plan_result.dxf'), len(placed)))
-                except Exception as exc:
-                    failures.append(('최종 평면도', str(exc)))
+                    failures.append(("종평면도", str(exc)))
+
             self.events.put((generation, 'export_summary', (successes, failures)))
         threading.Thread(target=work, daemon=True).start()
 
