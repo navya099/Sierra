@@ -10,7 +10,7 @@
     "sheet": {
       "origin_x": 0,
       "origin_y": 0,
-      "label_column_width": 40,
+      "label_column_width": 400,
       "start_margin": 10,
       "end_margin": 10
     },
@@ -46,6 +46,14 @@
       "major_interval": 1000,
       "band_interval": 100,
       "alignment_station_interval": 1000
+    },
+    "placement": {
+      "enabled": false,
+      "band_to_profile_gap": 30.0,
+      "reserved_structure_depth": 0.0,
+      "structure_clearance": 10.0,
+      "profile_plot_height": 100.0,
+      "datum_label_offset": 12.0
     }
   },
   "visibility": {

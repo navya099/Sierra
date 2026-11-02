@@ -59,6 +59,14 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
     profile = layout['profile']
     if profile['plot_upper_y'] <= profile['plot_lower_y']:
         raise ValueError('plot_upper_y must exceed plot_lower_y')
+    placement = layout.get('placement')
+    if placement is not None:
+        if not isinstance(placement, dict) or type(placement.get('enabled')) is not bool:
+            raise ValueError('layout.placement.enabled: boolean required')
+        for key in ('band_to_profile_gap', 'reserved_structure_depth',
+                    'structure_clearance', 'profile_plot_height', 'datum_label_offset'):
+            _number(placement.get(key), f'layout.placement.{key}',
+                    positive=(key == 'profile_plot_height'))
     visibility = data.get('visibility')
     if not isinstance(visibility, dict):
         raise ValueError('visibility required')

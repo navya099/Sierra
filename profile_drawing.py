@@ -131,6 +131,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             band_interval=p['stations']['band_interval'],
             alignment_station_interval=p['stations']['alignment_station_interval'])
 
+    # S3-D3: opt-in placement. Baseline presets keep exact historical coordinates.
+    placement = preset['layout'].get('placement') if preset else None
+    if placement and placement['enabled']:
+        band_top = sum(preset['layout']['band'][k] for k in
+                       ('alignment_height', 'ground_height', 'design_height', 'fill_height', 'cut_height'))
+        required_lower = (band_top + placement['band_to_profile_gap']
+                          + placement['reserved_structure_depth']
+                          + placement['structure_clearance'])
+        lower = max(options.plot_lower_y, required_lower)
+        upper = max(options.plot_upper_y, lower + placement['profile_plot_height'])
+        options = replace(options, plot_lower_y=lower, plot_upper_y=upper)
+
     source = Path(source_dxf).resolve()
     output = Path(output_dxf).resolve()
     if source == output:
@@ -639,6 +651,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
         'drawing_mode': policy.mode.value, 'vertical_exaggeration_enabled': options.vertical_exaggeration_enabled,
         'plot_lower_y': ylo, 'plot_upper_y': yhi,
+        'layout_placement_enabled': bool(placement and placement['enabled']),
+        'layout_reserved_structure_depth': placement['reserved_structure_depth'] if placement else 0.0,
         'datum_segment_count': len(datum_segments),
         **alignment_info,
         'datum_break_count': len(datum_segments)-1,

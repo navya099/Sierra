@@ -46,6 +46,14 @@
       "major_interval": 200,
       "band_interval": 20,
       "alignment_station_interval": 200
+    },
+    "placement": {
+      "enabled": false,
+      "band_to_profile_gap": 30.0,
+      "reserved_structure_depth": 0.0,
+      "structure_clearance": 10.0,
+      "profile_plot_height": 100.0,
+      "datum_label_offset": 12.0
     }
   },
   "visibility": {
