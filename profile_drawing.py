@@ -5,7 +5,7 @@ Source DXF is strictly read-only. No sheet scaling or sheet splitting here.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import math
 import os
@@ -16,6 +16,7 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
+from profile_presets.loader import load_preset, validate_preset
 from profile_transform import ProfileTransform, DrawingMode
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
@@ -62,6 +63,7 @@ class DrawingOptions:
     datum_safety_margin_m: float = 5.0
     sheet_start_sta: float | None = None
     sheet_end_sta: float | None = None
+    layout_preset: dict | None = None  # S3-D2: explicit opt-in; legacy output unchanged
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -111,6 +113,24 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            tunnel_settings: TunnelSettings | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
+    preset = options.layout_preset
+    if preset is not None:
+        validate_preset(preset, expected_mode=options.drawing_mode.value,
+                        expected_scales=(options.horizontal_scale, options.vertical_scale))
+        p = preset['layout']
+        options = replace(options,
+            origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
+            start_margin=p['sheet']['start_margin'], end_margin=p['sheet']['end_margin'],
+            plot_lower_y=p['profile']['plot_lower_y'], plot_upper_y=p['profile']['plot_upper_y'],
+            datum_step_m=p['profile']['datum_step_m'],
+            datum_safety_margin_m=p['profile']['datum_safety_margin_m'],
+            vip_circle_radius=p['symbols']['vip_circle_radius'],
+            annotation_row_height=p['text']['annotation_row_height'],
+            station_interval=p['stations']['station_interval'],
+            major_interval=p['stations']['major_interval'],
+            band_interval=p['stations']['band_interval'],
+            alignment_station_interval=p['stations']['alignment_station_interval'])
+
     source = Path(source_dxf).resolve()
     output = Path(output_dxf).resolve()
     if source == output:
@@ -174,7 +194,19 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                               mode=options.drawing_mode,
                               vertical_exaggeration_enabled=options.vertical_exaggeration_enabled)
     effective_vertical_scale = 1000.0 / policy.y_units_per_metre
-    layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
+    if preset is None:
+        layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
+    else:
+        sheet, band, txt = (preset['layout'][k] for k in ('sheet', 'band', 'text'))
+        layout = ProfileLayout(
+            origin_x=options.origin_x, origin_y=options.origin_y,
+            label_column_width=sheet['label_column_width'],
+            alignment_height=band['alignment_height'], ground_height=band['ground_height'],
+            design_height=band['design_height'], fill_height=band['fill_height'],
+            cut_height=band['cut_height'],
+            distance_rule_offset=band['distance_rule_offset'],
+            grade_rule_offset=band['grade_rule_offset'],
+            data_text_height=txt['data_text_height'], label_text_height=txt['label_text_height'])
     graph_base_y = layout.origin_y + options.plot_lower_y
     if options.auto_datum and options.graph_bottom is not None:
         raise ValueError('자동 표고 기준과 수동 graph_bottom을 동시에 사용할 수 없습니다.')
@@ -334,21 +366,28 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             y1 = yhi
             # Vertical break line with small zig-zag at the middle.
             ym = (y0 + y1) / 2
-            points = [(x, y0), (x, ym-7), (x-2.5, ym-3),
-                      (x+2.5, ym+3), (x, ym+7), (x, y1)]
+            break_half_width = (preset['layout']['symbols']['datum_break_width'] if preset else 2.5)
+            break_half_height = (preset['layout']['symbols']['datum_break_height'] if preset else 7)
+            points = [(x, y0), (x, ym-break_half_height),
+                      (x-break_half_width, ym-3),
+                      (x+break_half_width, ym+3),
+                      (x, ym+break_half_height), (x, y1)]
             msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
             _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
-                  2.4, 'DATUM_LABEL')
+                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
             _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
-                  2.4, 'DATUM_LABEL')
+                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
-    rows = [('평면선형', 0, 20), ('지반고', 20, 40), ('계획고', 40, 60),
-            ('성토고', 60, 75), ('절토고', 75, 90)]
+    rows = [('평면선형', 0, layout.alignment_top),
+            ('지반고', layout.alignment_top, layout.ground_top),
+            ('계획고', layout.ground_top, layout.design_top),
+            ('성토고', layout.design_top, layout.fill_top),
+            ('절토고', layout.fill_top, layout.band_top)]
     if not options.include_alignment_placeholder:
         rows = rows[1:]
-    for y in (0, 20, 40, 60, 75, 90):
+    for y in (0, layout.alignment_top, layout.ground_top, layout.design_top, layout.fill_top, layout.band_top):
         _line(msp, label_left, layout.origin_y+y, data_right,
               layout.origin_y+y, 'PROFILE_BAND')
     for x in (label_left, data_left, data_right):
@@ -362,8 +401,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     for sta in band_stations:
         g = raw_ground.at(sta)[0]
         p = vc_alignment.evaluate(sta)[0] if vc_alignment else raw_plan.at(sta)[0]
-        vals = ((max(g-p, 0), 75, 90), (max(p-g, 0), 60, 75),
-                (g, 20, 40), (p, 40, 60))
+        vals = ((max(g-p, 0), layout.fill_top, layout.band_top),
+                (max(p-g, 0), layout.design_top, layout.fill_top),
+                (g, layout.alignment_top, layout.ground_top),
+                (p, layout.ground_top, layout.design_top))
         for idx, (value, low, high) in enumerate(vals):
             if idx < 2 and value <= 1e-7:
                 continue
@@ -641,3 +682,10 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def options_with_preset(options: DrawingOptions) -> DrawingOptions:
+    """Load exact mode/H/V preset; no silent fallback or alteration of options."""
+    from profile_transform import DrawingMode
+    mode = options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode
+    return replace(options, layout_preset=load_preset(mode, options.horizontal_scale, options.vertical_scale))
