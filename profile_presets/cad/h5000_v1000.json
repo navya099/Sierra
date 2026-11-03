@@ -38,7 +38,8 @@
       },
       "alignment": {
         "diagram": {
-          "baseline_offset": 40.0
+          "baseline_offset": 40.0,
+          "curve_offset": 30
         },
         "text": {
           "station_height": 15,
@@ -47,10 +48,10 @@
           "curve_info_height": 15,
           "curve_info_left_y": 60,
           "curve_info_right_y": 50,
-          "curve_info_line_spacing": 2.6,
+          "curve_info_line_spacing": 20,
           "element_station_height": 15,
           "element_station_offset": 12.5,
-          "element_station_x_offset": 1.5
+          "element_station_x_offset": 0
         }
       }
     },

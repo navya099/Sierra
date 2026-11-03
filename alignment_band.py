@@ -1,6 +1,6 @@
 """Render DXF-derived horizontal alignment in the 0..20 mm profile band.
 
-Right: +6 mm, left: -6 mm. Cubic spiral transitions are linear
+Right: +6 mm, left: -6 mm by default (configurable via curve_offset). Cubic spiral transitions are linear
 SP->PC and CP->PS; circular part PC->CP is constant offset.
 """
 from pathlib import Path
@@ -19,12 +19,20 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
     diagram = alignment_settings.get('diagram', {})
     cfg = alignment_settings.get('text', {})
     ybase = origin_y + diagram.get('baseline_offset', 10.0)
+    # The reader owns turn direction; drawing configuration owns amplitude.
+    # Missing curve_offset preserves the reader's original signed value.
+    curve_offset = diagram.get('curve_offset')
+    def signed_offset(ip):
+        original = ip['band_offset_mm']
+        if curve_offset is None or original == 0:
+            return original
+        return (-curve_offset if original < 0 else curve_offset)
     def offset_at(sta):
         for ip in ips:
             a, b = ip['curve_start_sta_m'], ip['curve_end_sta_m']
             if not a <= sta <= b:
                 continue
-            offset = ip['band_offset_mm']
+            offset = signed_offset(ip)
             if ip['curve_type'] == 'simplecurve':
                 return offset
             p, q = ip['stations']['PC'], ip['stations']['CP']
@@ -78,7 +86,7 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
             if start <= sta <= end:
                 msp.add_line(
                     (station_x(sta), ybase),
-                    (station_x(sta), ybase + ip['band_offset_mm']),
+                    (station_x(sta), ybase + signed_offset(ip)),
                     dxfattribs={'layer': 'ALIGNMENT_CURVE'}
                 )
                 line_count += 1

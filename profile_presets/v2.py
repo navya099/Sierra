@@ -33,9 +33,11 @@ def validate_layout_v2(layout):
     band = layout['band']
     if 'alignment' in band:
         _object(band['alignment'], ('diagram', 'text'), 'layout.band.alignment')
-        _object(band['alignment']['diagram'], ('baseline_offset',), 'layout.band.alignment.diagram')
+        _object(band['alignment']['diagram'], ('baseline_offset', 'curve_offset') if 'curve_offset' in band['alignment']['diagram'] else ('baseline_offset',), 'layout.band.alignment.diagram')
         _object(band['alignment']['text'], ALIGNMENT_TEXT_FIELDS, 'layout.band.alignment.text')
         _num(band['alignment']['diagram']['baseline_offset'], 'layout.band.alignment.diagram.baseline_offset', allow_zero=True)
+        if 'curve_offset' in band['alignment']['diagram']:
+            _num(band['alignment']['diagram']['curve_offset'], 'layout.band.alignment.diagram.curve_offset', allow_zero=True)
         for key, value in band['alignment']['text'].items():
             _num(value, 'layout.band.alignment.text.'+key, allow_zero=(key in
                  ('station_top_inset','station_rotation','curve_info_left_y',

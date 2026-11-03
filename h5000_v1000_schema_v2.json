@@ -35,6 +35,23 @@
       "text": {
         "data_height": 15,
         "label_height": 20
+      },
+      "alignment": {
+        "diagram": {
+          "baseline_offset": 10.0
+        },
+        "text": {
+          "station_height": 15,
+          "station_top_inset": 15,
+          "station_rotation": 0,
+          "curve_info_height": 1.8,
+          "curve_info_left_y": 8.5,
+          "curve_info_right_y": 7.7,
+          "curve_info_line_spacing": 2.6,
+          "element_station_height": 2.4,
+          "element_station_offset": 3.0,
+          "element_station_x_offset": 1.5
+        }
       }
     },
     "profile": {
@@ -77,9 +94,6 @@
         "label_dx": 11,
         "label_dy": 12,
         "break_kink_dy": 3
-      },
-      "alignment": {
-        "station_top_inset": 15
       },
       "vip": {
         "text_height": 15,
