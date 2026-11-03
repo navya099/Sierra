@@ -62,6 +62,36 @@
       "text_height_factor": 5.0,
       "profile_plot_height": 500.0,
       "use_placement_clearance": true
+    },
+    "absolute_dimensions": {
+      "enabled": false,
+      "sheet": {
+        "label_column_width": 40
+      },
+      "band": {
+        "alignment_height": 20,
+        "ground_height": 20,
+        "design_height": 20,
+        "fill_height": 15,
+        "cut_height": 15,
+        "distance_rule_offset": 20,
+        "grade_rule_offset": 40
+      },
+      "text": {
+        "data_text_height": 2.4,
+        "label_text_height": 5,
+        "datum_text_height": 2.4,
+        "vip_text_height": 2.0,
+        "annotation_row_height": 6
+      },
+      "profile": {
+        "plot_lower_y": 150.0,
+        "plot_height": 100.0,
+        "band_to_profile_gap": 30.0,
+        "reserved_structure_depth": 0.0,
+        "structure_clearance": 10.0,
+        "use_placement_clearance": false
+      }
     }
   },
   "visibility": {
@@ -73,7 +103,7 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D5 optional expansion; values for non-1000 are provisional, not sample-calibrated. Enable explicitly after reviewing CAD/REPORT units.",
+  "notes": "S3-D5.2: absolute dimensions are editable per preset; H5000 CAD values are provisional. Legacy expansion disabled.",
   "visibility_policy": {
     "enabled": false,
     "minor_grid": true,

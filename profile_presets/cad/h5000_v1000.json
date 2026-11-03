@@ -56,12 +56,42 @@
       "datum_label_offset": 12.0
     },
     "expansion": {
-      "enabled": true,
+      "enabled": false,
       "band_height_factor": 5.0,
       "label_column_width": 200.0,
       "text_height_factor": 5.0,
       "profile_plot_height": 500.0,
       "use_placement_clearance": true
+    },
+    "absolute_dimensions": {
+      "enabled": true,
+      "sheet": {
+        "label_column_width": 200.0
+      },
+      "band": {
+        "alignment_height": 80,
+        "ground_height": 60,
+        "design_height": 60,
+        "fill_height": 60,
+        "cut_height": 60,
+        "distance_rule_offset": 100,
+        "grade_rule_offset": 200
+      },
+      "text": {
+        "data_text_height": 12.0,
+        "label_text_height": 25,
+        "datum_text_height": 12.0,
+        "vip_text_height": 10.0,
+        "annotation_row_height": 30
+      },
+      "profile": {
+        "plot_lower_y": 150.0,
+        "plot_height": 500.0,
+        "band_to_profile_gap": 30.0,
+        "reserved_structure_depth": 250.0,
+        "structure_clearance": 10.0,
+        "use_placement_clearance": true
+      }
     }
   },
   "visibility": {
@@ -73,7 +103,7 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D5 optional expansion; values for non-1000 are provisional, not sample-calibrated. Enable explicitly after reviewing CAD/REPORT units.",
+  "notes": "S3-D5.2: absolute dimensions are editable per preset; H5000 CAD values are provisional. Legacy expansion disabled.",
   "visibility_policy": {
     "enabled": false,
     "minor_grid": true,

@@ -115,22 +115,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     options = options or DrawingOptions()
     preset = options.layout_preset
     if preset is not None:
-        from profile_transform import DrawingMode
-
-        mode = (
-            options.drawing_mode.value
-            if isinstance(options.drawing_mode, DrawingMode)
-            else options.drawing_mode
-        )
-
-        validate_preset(
-            preset,
-            expected_mode=mode,
-            expected_scales=(
-                options.horizontal_scale,
-                options.vertical_scale
-            )
-        )
+        validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
+                        expected_scales=(options.horizontal_scale, options.vertical_scale))
         p = preset['layout']
         options = replace(options,
             origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
@@ -144,6 +130,28 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             major_interval=p['stations']['major_interval'],
             band_interval=p['stations']['band_interval'],
             alignment_station_interval=p['stations']['alignment_station_interval'])
+
+    # S3-D5.2: explicit absolute dimensions take precedence over legacy factors.
+    # No scaling of engineering geometry or S3-C coordinate transforms.
+    absolute = preset['layout'].get('absolute_dimensions') if preset else None
+    if absolute and absolute['enabled']:
+        from copy import deepcopy
+        preset = deepcopy(preset)
+        layout_cfg = preset['layout']
+        for group in ('sheet', 'band', 'text'):
+            layout_cfg[group].update(absolute[group])
+        options = replace(options, annotation_row_height=layout_cfg['text']['annotation_row_height'])
+        graph = absolute['profile']
+        band_top = sum(layout_cfg['band'][k] for k in
+                       ('alignment_height', 'ground_height', 'design_height', 'fill_height', 'cut_height'))
+        lower = graph['plot_lower_y']
+        if graph['use_placement_clearance']:
+            lower = max(lower, band_top + graph['band_to_profile_gap']
+                        + graph['reserved_structure_depth'] + graph['structure_clearance'])
+        options = replace(options, plot_lower_y=lower,
+                          plot_upper_y=lower + graph['plot_height'])
+        layout_cfg['placement']['enabled'] = False
+        layout_cfg['expansion']['enabled'] = False
 
     # S3-D5: optional whole-layout expansion. Values are drawing-space dimensions,
     # independent of engineering station/elevation coordinate transforms.

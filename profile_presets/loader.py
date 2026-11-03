@@ -67,6 +67,32 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
                     'structure_clearance', 'profile_plot_height', 'datum_label_offset'):
             _number(placement.get(key), f'layout.placement.{key}',
                     positive=(key == 'profile_plot_height'))
+    absolute = layout.get('absolute_dimensions')
+    if absolute is not None:
+        if not isinstance(absolute, dict) or set(absolute) != {'enabled', 'sheet', 'band', 'text', 'profile'}:
+            raise ValueError('layout.absolute_dimensions: invalid groups')
+        if type(absolute['enabled']) is not bool:
+            raise ValueError('layout.absolute_dimensions.enabled: boolean required')
+        for group, fields in {
+            'sheet': ('label_column_width',),
+            'band': REQUIRED_LAYOUT['band'],
+            'text': REQUIRED_LAYOUT['text'],
+            'profile': ('plot_lower_y', 'plot_height', 'band_to_profile_gap',
+                        'reserved_structure_depth', 'structure_clearance', 'use_placement_clearance'),
+        }.items():
+            values = absolute.get(group)
+            if not isinstance(values, dict) or set(values) != set(fields):
+                raise ValueError(f'layout.absolute_dimensions.{group}: invalid fields')
+            for field in fields:
+                if field == 'use_placement_clearance':
+                    if type(values[field]) is not bool:
+                        raise ValueError('use_placement_clearance: boolean required')
+                else:
+                    _number(values[field], f'layout.absolute_dimensions.{group}.{field}',
+                            positive=(field not in ('plot_lower_y','band_to_profile_gap',
+                                                    'reserved_structure_depth','structure_clearance')))
+        if absolute['enabled'] and layout.get('placement') is None:
+            raise ValueError('absolute_dimensions requires placement section')
     expansion = layout.get('expansion')
     if expansion is not None:
         if not isinstance(expansion, dict) or set(expansion) != {
