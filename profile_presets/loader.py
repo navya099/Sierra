@@ -93,6 +93,24 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
                                                     'reserved_structure_depth','structure_clearance')))
         if absolute['enabled'] and layout.get('placement') is None:
             raise ValueError('absolute_dimensions requires placement section')
+    # S3-D5.3: optional, independently editable annotation dimensions.
+    annotations = layout.get('annotations')
+    if annotations is not None:
+        if not isinstance(annotations, dict) or type(annotations.get('enabled')) is not bool:
+            raise ValueError('layout.annotations.enabled: boolean required')
+        annotation_fields = (
+            'datum_label_dx', 'datum_label_dy', 'datum_break_kink_dy',
+            'alignment_station_top_inset', 'vip_elevation_text_height',
+            'vip_caption_text_height', 'vip_caption_gap_factor',
+            'curve_ordinate_offset', 'curve_endpoint_text_offset',
+            'curve_endpoint_line_height', 'curve_text_height',
+            'vip_distance_text_offset', 'vip_distance_text_height',
+            'vip_arrow_half_height', 'vip_arrow_length',
+            'grade_text_height', 'distance_text_height')
+        if set(annotations) != {'enabled', *annotation_fields}:
+            raise ValueError('layout.annotations: exact keys required')
+        for field in annotation_fields:
+            _number(annotations[field], f'layout.annotations.{field}', positive=True)
     expansion = layout.get('expansion')
     if expansion is not None:
         if not isinstance(expansion, dict) or set(expansion) != {

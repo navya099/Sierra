@@ -153,6 +153,31 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         layout_cfg['placement']['enabled'] = False
         layout_cfg['expansion']['enabled'] = False
 
+    # S3-D5.3: annotation-only absolute dimensions, opt-in and isolated.
+    # These are drawing-space offsets/heights, never station/elevation transforms.
+    annotation_defaults = {
+        'datum_label_dx': 11.0, 'datum_label_dy': 12.0,
+        'datum_break_kink_dy': 3.0,
+        'alignment_station_top_inset': 3.0,
+        'vip_elevation_text_height': 2.4,
+        'vip_caption_text_height': 2.4,
+        'vip_caption_gap_factor': 0.6,
+        'curve_ordinate_offset': 20.0,
+        'curve_endpoint_text_offset': 10.0,
+        'curve_endpoint_line_height': 26.0,
+        'curve_text_height': 2.4,
+        'vip_distance_text_offset': 2.0,
+        'vip_distance_text_height': 2.4,
+        'vip_arrow_half_height': 0.75,
+        'vip_arrow_length': 1.25,
+        'grade_text_height': 10.0,
+        'distance_text_height': 5.0,
+    }
+    annotation_cfg = (preset or {}).get('layout', {}).get('annotations', {})
+    annotation_dims = dict(annotation_defaults)
+    if annotation_cfg.get('enabled', False):
+        annotation_dims.update({k: v for k, v in annotation_cfg.items() if k != 'enabled'})
+
     # S3-D5: optional whole-layout expansion. Values are drawing-space dimensions,
     # independent of engineering station/elevation coordinate transforms.
     expansion = preset['layout'].get('expansion') if preset else None
@@ -437,13 +462,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             break_half_width = (preset['layout']['symbols']['datum_break_width'] if preset else 2.5)
             break_half_height = (preset['layout']['symbols']['datum_break_height'] if preset else 7)
             points = [(x, y0), (x, ym-break_half_height),
-                      (x-break_half_width, ym-3),
-                      (x+break_half_width, ym+3),
+                      (x-break_half_width, ym-annotation_dims['datum_break_kink_dy']),
+                      (x+break_half_width, ym+annotation_dims['datum_break_kink_dy']),
                       (x, ym+break_half_height), (x, y1)]
             msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
-            _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
+            _text(msp, f'EL {left.datum_el:.0f}', x-annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
                   (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
-            _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
+            _text(msp, f'EL {right.datum_el:.0f}', x+annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
                   (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
@@ -491,7 +516,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                              else str(station_m % 1000))
             # 평면선형 밴드 상단(Y=20)에서 3mm 아래.
             _text(msp, station_label, display_sta(sta),
-                  layout.origin_y + layout.alignment_top - 3.0,
+                  layout.origin_y + layout.alignment_top - annotation_dims['alignment_station_top_inset'],
                   layout.data_text_height, 'BAND_TEXT')
     alignment_info = {'curve_count': 0, 'curve_visible_count': 0, 'curve_source': None}
     if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
@@ -527,18 +552,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if point.kind.startswith('VIP') and start < point.sta < end:
             msp.add_circle((x, grade_rule_y), r, dxfattribs={'layer': 'VIP_MARKER'})
             _text(msp, f'{point.elevation:.{options.vip_elevation_decimals}f}',
-                  x, grade_rule_y, 2.4,
+                  x, grade_rule_y, annotation_dims['vip_elevation_text_height'],
                   'VIP_MARKER', rotation=90)
-            _text(msp, 'VC', x, grade_rule_y+r+options.text_height*.6,
-                  2.4, 'VIP_MARKER')
+            _text(msp, 'VC', x, grade_rule_y+r+options.text_height*annotation_dims['vip_caption_gap_factor'],
+                  annotation_dims['vip_caption_text_height'], 'VIP_MARKER')
 
     # v12.3.3: vertical-curve ordinate labels at regular station grids.
     # Ordinate = actual parabola minus the nearest VIP tangent (signed metres).
     # Keep all additions inside the existing annotation strip (band top .. distance rule).
     if vc_alignment:
         grid_step = options.station_interval
-        ordinate_y = grade_rule_y + 20.0  # fixed +20 offset above VIP_DISTNACE_LINE
-        endpoint_y = grade_rule_y + 10.0  # fixed +10 offset above VIP_DISTNACE_LINE
+        ordinate_y = grade_rule_y + annotation_dims['curve_ordinate_offset']  # fixed +20 offset above VIP_DISTNACE_LINE
+        endpoint_y = grade_rule_y + annotation_dims['curve_endpoint_text_offset']  # fixed +10 offset above VIP_DISTNACE_LINE
         for curve in vc_alignment.curves:
             pvc, pvt = curve.pvc_sta, curve.pvt_sta
             if pvt < start or pvc > end:
@@ -546,7 +571,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             for endpoint in (pvc, pvt):
                 if start <= endpoint <= end:
                     x = display_sta(endpoint)
-                    _line(msp, x, grade_rule_y, x, grade_rule_y + 26.0,
+                    _line(msp, x, grade_rule_y, x, grade_rule_y + annotation_dims['curve_endpoint_line_height'],
                           'VERTICAL_CURVE_ORDINATE_LINE')
                     # Distance to the adjacent grid *inside* the curve.
                     neighbor = (math.ceil((endpoint - 1e-8) / grid_step) * grid_step
@@ -559,7 +584,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                     gap = abs(neighbor - endpoint)
                     if gap > 1e-7 and gap <= grid_step + 1e-7 and start <= neighbor <= end:
                         midpoint = (display_sta(endpoint) + display_sta(neighbor)) / 2
-                        _text(msp, f'{gap:.2f}', midpoint, endpoint_y, 2.4,
+                        _text(msp, f'{gap:.2f}', midpoint, endpoint_y, annotation_dims['curve_text_height'],
                               'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT')
             # All grid stations strictly inside the vertical curve.
             for sta in _multiples(max(start, pvc), min(end, pvt), grid_step):
@@ -567,13 +592,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                     continue
                 ordinate = curve.ordinate(sta)
                 _text(msp, f'{ordinate:.2f}', display_sta(sta), ordinate_y,
-                      2.4, 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
+                      annotation_dims['curve_text_height'], 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
 
     # v12.3.9: show distances from each interior VIP to adjacent station grids.
     # Draw in the lower annotation strip, independent of ordinate annotations.
     vip_distance_y = (distance_rule_y + layout.origin_y + layout.band_top) / 2.0
-    arrow_half_height = 0.75
-    arrow_length = 1.25
+    arrow_half_height = annotation_dims['vip_arrow_half_height']
+    arrow_length = annotation_dims['vip_arrow_length']
     for vip_sta in circle_stations:
         left_grid = math.floor((vip_sta + 1e-8) / options.station_interval) * options.station_interval
         right_grid = math.ceil((vip_sta - 1e-8) / options.station_interval) * options.station_interval
@@ -590,8 +615,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 arrow_len = max(0.2, (right_x-left_x)*0.25)
             else:
                 arrow_len = arrow_length
-            _text(msp, f'{gap:.2f}', (left_x + right_x)/2.0, vip_distance_y + 2.0,
-                  2.4, 'VIP_TO_GRID_DISTANCE_TEXT')
+            _text(msp, f'{gap:.2f}', (left_x + right_x)/2.0, vip_distance_y + annotation_dims['vip_distance_text_offset'],
+                  annotation_dims['vip_distance_text_height'], 'VIP_TO_GRID_DISTANCE_TEXT')
             # v12.3.10: horizontal dimension line joining both arrow tips.
             # Keep the approved Y position, arrowheads and text unchanged.
             msp.add_line((left_x, vip_distance_y), (right_x, vip_distance_y),
@@ -615,10 +640,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         midpoint = display_sta((left_sta + right_sta)/2)
         _text(msp, _fmt_grade(a.gradient_out, options.grade_decimals),
               midpoint, grade_rule_y + ar*.45,
-              10.0, 'VIP_ANNOTATION')
+              annotation_dims['grade_text_height'], 'VIP_ANNOTATION')
         _text(msp, _fmt_distance(b.sta-a.sta),
               midpoint, distance_rule_y + ar*.45,
-              5.0, 'VIP_ANNOTATION')
+              annotation_dims['distance_text_height'], 'VIP_ANNOTATION')
 
     tunnel_count = 0
     portal_count = 0

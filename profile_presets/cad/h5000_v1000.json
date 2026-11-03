@@ -64,16 +64,16 @@
       "use_placement_clearance": true
     },
     "absolute_dimensions": {
-      "enabled": true,
+      "enabled": false,
       "sheet": {
         "label_column_width": 200.0
       },
       "band": {
-        "alignment_height": 80,
-        "ground_height": 60,
-        "design_height": 60,
-        "fill_height": 60,
-        "cut_height": 60,
+        "alignment_height": 100,
+        "ground_height": 100,
+        "design_height": 100,
+        "fill_height": 75,
+        "cut_height": 75,
         "distance_rule_offset": 100,
         "grade_rule_offset": 200
       },
@@ -92,6 +92,26 @@
         "structure_clearance": 10.0,
         "use_placement_clearance": true
       }
+    },
+    "annotations": {
+      "enabled": false,
+      "datum_label_dx": 11,
+      "datum_label_dy": 12,
+      "datum_break_kink_dy": 3,
+      "alignment_station_top_inset": 3,
+      "vip_elevation_text_height": 2.4,
+      "vip_caption_text_height": 2.4,
+      "vip_caption_gap_factor": 0.6,
+      "curve_ordinate_offset": 20,
+      "curve_endpoint_text_offset": 10,
+      "curve_endpoint_line_height": 26,
+      "curve_text_height": 2.4,
+      "vip_distance_text_offset": 2,
+      "vip_distance_text_height": 2.4,
+      "vip_arrow_half_height": 0.75,
+      "vip_arrow_length": 1.25,
+      "grade_text_height": 10,
+      "distance_text_height": 5
     }
   },
   "visibility": {
