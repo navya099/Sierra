@@ -11,8 +11,8 @@
       "origin_x": 0,
       "origin_y": 0,
       "label_column_width": 40,
-      "start_margin": 10,
-      "end_margin": 10
+      "start_margin": 60,
+      "end_margin": 60
     },
     "profile": {
       "plot_lower_y": 150,
@@ -37,15 +37,15 @@
       "annotation_row_height": 6
     },
     "symbols": {
-      "vip_circle_radius": 8,
+      "vip_circle_radius": 40,
       "datum_break_width": 2.5,
       "datum_break_height": 7
     },
     "stations": {
-      "station_interval": 100,
-      "major_interval": 1000,
-      "band_interval": 100,
-      "alignment_station_interval": 1000
+      "station_interval": 40,
+      "major_interval": 200,
+      "band_interval": 40,
+      "alignment_station_interval": 200
     },
     "placement": {
       "enabled": false,
@@ -64,24 +64,24 @@
       "use_placement_clearance": true
     },
     "absolute_dimensions": {
-      "enabled": false,
+      "enabled": true,
       "sheet": {
-        "label_column_width": 200.0
+        "label_column_width": 105
       },
       "band": {
-        "alignment_height": 100,
-        "ground_height": 100,
-        "design_height": 100,
-        "fill_height": 75,
-        "cut_height": 75,
-        "distance_rule_offset": 100,
-        "grade_rule_offset": 200
+        "alignment_height": 80,
+        "ground_height": 80,
+        "design_height": 80,
+        "fill_height": 60,
+        "cut_height": 60,
+        "distance_rule_offset": 70,
+        "grade_rule_offset": 140
       },
       "text": {
-        "data_text_height": 12.0,
-        "label_text_height": 25,
-        "datum_text_height": 12.0,
-        "vip_text_height": 10.0,
+        "data_text_height": 15,
+        "label_text_height": 20,
+        "datum_text_height": 15,
+        "vip_text_height": 15,
         "annotation_row_height": 30
       },
       "profile": {
@@ -94,12 +94,12 @@
       }
     },
     "annotations": {
-      "enabled": false,
+      "enabled": true,
       "datum_label_dx": 11,
       "datum_label_dy": 12,
       "datum_break_kink_dy": 3,
-      "alignment_station_top_inset": 3,
-      "vip_elevation_text_height": 2.4,
+      "alignment_station_top_inset": 15,
+      "vip_elevation_text_height": 15,
       "vip_caption_text_height": 2.4,
       "vip_caption_gap_factor": 0.6,
       "curve_ordinate_offset": 20,
@@ -107,16 +107,16 @@
       "curve_endpoint_line_height": 26,
       "curve_text_height": 2.4,
       "vip_distance_text_offset": 2,
-      "vip_distance_text_height": 2.4,
+      "vip_distance_text_height": 10,
       "vip_arrow_half_height": 0.75,
       "vip_arrow_length": 1.25,
-      "grade_text_height": 10,
-      "distance_text_height": 5
+      "grade_text_height": 50,
+      "distance_text_height": 25
     }
   },
   "visibility": {
     "minor_station_labels": false,
-    "vertical_curve_details": true,
+    "vertical_curve_details": false,
     "pier_details": false,
     "datum_labels": true,
     "alignment_band": true,
@@ -125,9 +125,9 @@
   },
   "notes": "S3-D5.2: absolute dimensions are editable per preset; H5000 CAD values are provisional. Legacy expansion disabled.",
   "visibility_policy": {
-    "enabled": false,
+    "enabled": true,
     "minor_grid": true,
-    "vertical_curve_annotations": true,
+    "vertical_curve_annotations": false,
     "vip_annotations": true,
     "datum_labels": true,
     "alignment_geometry": true,
