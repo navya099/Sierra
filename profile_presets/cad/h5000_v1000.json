@@ -116,7 +116,7 @@
   },
   "visibility": {
     "minor_station_labels": false,
-    "vertical_curve_details": false,
+    "vertical_curve_details": true,
     "pier_details": false,
     "datum_labels": true,
     "alignment_band": true,
@@ -127,7 +127,7 @@
   "visibility_policy": {
     "enabled": true,
     "minor_grid": true,
-    "vertical_curve_annotations": false,
+    "vertical_curve_annotations": true,
     "vip_annotations": true,
     "datum_labels": true,
     "alignment_geometry": true,

@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 from .schema import PresetKey
+from .v2 import validate_layout_v2
 
 ROOT = Path(__file__).resolve().parent
 MODES = frozenset({'cad', 'report'})
@@ -30,7 +31,7 @@ def _number(value, field, *, positive=False):
 def validate_preset(data, expected_mode=None, expected_scales=None):
     if not isinstance(data, dict):
         raise ValueError('preset must be an object')
-    if data.get('schema_version') != 1 or isinstance(data.get('schema_version'), bool):
+    if type(data.get('schema_version')) is not int or data['schema_version'] not in (1, 2):
         raise ValueError('unsupported schema_version')
     if data.get('mode') not in MODES:
         raise ValueError('invalid mode')
@@ -50,6 +51,14 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
     layout = data.get('layout')
     if not isinstance(layout, dict):
         raise ValueError('layout required')
+    if data['schema_version'] == 2:
+        validate_layout_v2(layout)
+    else:
+        _validate_legacy_layout(layout)
+    visibility = data.get('visibility')
+    return _validate_visibility_and_status(data, visibility)
+
+def _validate_legacy_layout(layout):
     for group, fields in REQUIRED_LAYOUT.items():
         values = layout.get(group)
         if not isinstance(values, dict):
@@ -123,7 +132,8 @@ def validate_preset(data, expected_mode=None, expected_scales=None):
             _number(expansion[key], 'layout.expansion.'+key, positive=True)
         if expansion['enabled'] and expansion['use_placement_clearance'] and placement is None:
             raise ValueError('layout.expansion requires layout.placement for clearance')
-    visibility = data.get('visibility')
+
+def _validate_visibility_and_status(data, visibility):
     if not isinstance(visibility, dict):
         raise ValueError('visibility required')
     for key in REQUIRED_VISIBILITY:
