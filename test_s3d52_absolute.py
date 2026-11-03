@@ -1,6 +1,7 @@
 import unittest
 import ezdxf
-from profile_presets.loader import load_preset, validate_preset
+from profile_presets.loader import validate_preset
+from test_preset_fixture import load_preset
 from profile_drawing import DrawingOptions, create_profile_drawing
 from test_s3d2_preset_dxf import TestS3D2, entities
 
@@ -27,6 +28,14 @@ class AbsoluteDimensionTests(unittest.TestCase):
         try:
             p=load_preset('cad',5000,1000)
             p['layout']['absolute_dimensions']['enabled']=True
+            # Pin the requested dimensions in this test; never rely on user JSON.
+            p['layout']['absolute_dimensions']['band'].update(
+                alignment_height=100, ground_height=100, design_height=100,
+                fill_height=75, cut_height=75)
+            p['layout']['absolute_dimensions']['profile'].update(
+                plot_lower_y=150, plot_height=500, band_to_profile_gap=30,
+                reserved_structure_depth=250, structure_clearance=10,
+                use_placement_clearance=True)
             out=t.root/'absolute.dxf'
             r=create_profile_drawing(t.src,out,DrawingOptions(drawing_mode='cad',horizontal_scale=5000,vertical_scale=1000,layout_preset=p))
             self.assertEqual(r['plot_lower_y'],740)
@@ -38,6 +47,29 @@ class AbsoluteDimensionTests(unittest.TestCase):
             r2=create_profile_drawing(t.src,t.root/'changed.dxf',DrawingOptions(drawing_mode='cad',horizontal_scale=5000,vertical_scale=1000,layout_preset=p))
             self.assertEqual(r2['plot_lower_y'],770)
         finally:t.tearDown()
+    def test_absolute_precedence_and_no_mutation(self):
+        import copy
+        t=TestS3D2('test_baseline_exact');t.setUp()
+        try:
+            p=load_preset('cad',5000,1000)
+            absolute=p['layout']['absolute_dimensions']
+            absolute['enabled']=True
+            absolute['band'].update(alignment_height=100,ground_height=100,
+                design_height=100,fill_height=75,cut_height=75)
+            absolute['profile'].update(plot_lower_y=150,plot_height=500,
+                band_to_profile_gap=30,reserved_structure_depth=250,
+                structure_clearance=10,use_placement_clearance=True)
+            p['layout']['expansion']['enabled']=True
+            p['layout']['placement']['enabled']=True
+            before=copy.deepcopy(p)
+            result=create_profile_drawing(t.src,t.root/'priority.dxf',
+                DrawingOptions(drawing_mode='cad',horizontal_scale=5000,
+                    vertical_scale=1000,layout_preset=p))
+            self.assertEqual(result['plot_lower_y'],740)
+            self.assertEqual(result['plot_upper_y'],1240)
+            self.assertEqual(p,before)
+        finally:t.tearDown()
+
     def test_invalid_absolute(self):
         p=load_preset('cad',5000,1000)
         p['layout']['absolute_dimensions']['text']['data_text_height']=-1

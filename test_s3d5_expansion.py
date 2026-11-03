@@ -1,5 +1,6 @@
 import unittest
-from profile_presets.loader import load_preset, validate_preset
+from profile_presets.loader import validate_preset
+from test_preset_fixture import load_preset
 from profile_drawing import DrawingOptions, create_profile_drawing
 from profile_transform import DrawingMode
 from test_s3d2_preset_dxf import TestS3D2
