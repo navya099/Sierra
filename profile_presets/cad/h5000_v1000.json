@@ -35,6 +35,23 @@
       "text": {
         "data_height": 15,
         "label_height": 20
+      },
+      "alignment": {
+        "diagram": {
+          "baseline_offset": 40.0
+        },
+        "text": {
+          "station_height": 15,
+          "station_top_inset": 15,
+          "station_rotation": 0,
+          "curve_info_height": 15,
+          "curve_info_left_y": 60,
+          "curve_info_right_y": 50,
+          "curve_info_line_spacing": 2.6,
+          "element_station_height": 15,
+          "element_station_offset": 12.5,
+          "element_station_x_offset": 1.5
+        }
       }
     },
     "profile": {
@@ -78,9 +95,6 @@
         "label_dy": 12,
         "break_kink_dy": 3
       },
-      "alignment": {
-        "station_top_inset": 15
-      },
       "vip": {
         "text_height": 15,
         "elevation_text_height": 15,
@@ -114,9 +128,9 @@
   },
   "visibility": {
     "minor_station_labels": false,
-    "vertical_curve_details": false,
-    "pier_details": true,
-    "datum_labels": false,
+    "vertical_curve_details": true,
+    "pier_details": false,
+    "datum_labels": true,
     "alignment_band": true,
     "ground_profile": true,
     "design_profile": true
@@ -124,7 +138,7 @@
   "visibility_policy": {
     "enabled": true,
     "minor_grid": true,
-    "vertical_curve_annotations": false,
+    "vertical_curve_annotations": true,
     "vip_annotations": true,
     "datum_labels": false,
     "alignment_geometry": true,

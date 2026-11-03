@@ -24,7 +24,7 @@ def to_drawing_preset(source: dict) -> dict:
                datum_text_height=pr['datum']['text_height'], vip_text_height=vh['text_height'],
                annotation_row_height=an['row']['height'])
     annotations = dict(enabled=True, datum_label_dx=vv['label_dx'], datum_label_dy=vv['label_dy'],
-        datum_break_kink_dy=vv['break_kink_dy'], alignment_station_top_inset=an['alignment']['station_top_inset'],
+        datum_break_kink_dy=vv['break_kink_dy'], alignment_station_top_inset=an.get('alignment', {}).get('station_top_inset', ba.get('alignment', {}).get('text', {}).get('station_top_inset', 3.0)),
         vip_elevation_text_height=vh['elevation_text_height'], vip_caption_text_height=vh['caption_text_height'],
         vip_caption_gap_factor=vh['caption_gap_factor'], curve_ordinate_offset=vc['ordinate_offset'],
         curve_endpoint_text_offset=vc['endpoint_text_offset'], curve_endpoint_line_height=vc['endpoint_line_height'],
@@ -67,4 +67,7 @@ def to_drawing_preset(source: dict) -> dict:
         'annotations': annotations,
     }
     validate_preset(result)
+    # Internal-only drawing settings; do not expose legacy keys in user JSON.
+    if 'alignment' in ba:
+        result['_s3d7_alignment'] = deepcopy(ba['alignment'])
     return result

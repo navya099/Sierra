@@ -21,11 +21,35 @@ def _num(value, path, allow_zero=False):
     if type(value) not in (int,float) or not math.isfinite(value) or value < 0 or (not allow_zero and value == 0):
         raise ValueError(f'{path}: finite {"nonnegative" if allow_zero else "positive"} number required')
 
+ALIGNMENT_TEXT_FIELDS = ('station_height', 'station_top_inset', 'station_rotation',
+                         'curve_info_height', 'curve_info_left_y', 'curve_info_right_y',
+                         'curve_info_line_spacing', 'element_station_height',
+                         'element_station_offset', 'element_station_x_offset')
+
 def validate_layout_v2(layout):
     _object(layout, LAYOUT_FIELDS, 'layout')
+    # S3-D7: alignment group is optional for older S3-D6 v2 presets.
+    # When present, it is the sole source of alignment text dimensions.
+    band = layout['band']
+    if 'alignment' in band:
+        _object(band['alignment'], ('diagram', 'text'), 'layout.band.alignment')
+        _object(band['alignment']['diagram'], ('baseline_offset',), 'layout.band.alignment.diagram')
+        _object(band['alignment']['text'], ALIGNMENT_TEXT_FIELDS, 'layout.band.alignment.text')
+        _num(band['alignment']['diagram']['baseline_offset'], 'layout.band.alignment.diagram.baseline_offset', allow_zero=True)
+        for key, value in band['alignment']['text'].items():
+            _num(value, 'layout.band.alignment.text.'+key, allow_zero=(key in
+                 ('station_top_inset','station_rotation','curve_info_left_y',
+                  'curve_info_right_y','element_station_offset','element_station_x_offset')))
+        if band['alignment']['text']['station_rotation'] > 360:
+            raise ValueError('layout.band.alignment.text.station_rotation: must be <= 360')
     for group, subgroups in LAYOUT_FIELDS.items():
-        _object(layout[group], subgroups, f'layout.{group}')
+        expected_groups = tuple(subgroups) + (('alignment',) if group == 'band' and 'alignment' in layout[group] else ())
+        if group == 'annotations' and 'alignment' in layout['band']:
+            expected_groups = tuple(k for k in expected_groups if k != 'alignment') if 'alignment' not in layout[group] else expected_groups
+        _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
+            if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:
+                continue
             values = layout[group][subgroup]
             path = f'layout.{group}.{subgroup}'
             _object(values, keys, path)

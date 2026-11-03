@@ -7,14 +7,18 @@ from pathlib import Path
 from alignment_reader import extract_with_stations
 
 
-def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line):
+def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line,
+                        alignment_settings=None):
     source = Path(source).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f'평면선형 DXF가 없습니다: {source}')
     result = extract_with_stations(source)
     ips = result['ips']
     # Preserve source chainage; never stretch/rebase horizontal data to vertical range.
-    ybase = origin_y + 10.0
+    alignment_settings = alignment_settings or {}
+    diagram = alignment_settings.get('diagram', {})
+    cfg = alignment_settings.get('text', {})
+    ybase = origin_y + diagram.get('baseline_offset', 10.0)
     def offset_at(sta):
         for ip in ips:
             a, b = ip['curve_start_sta_m'], ip['curve_end_sta_m']
@@ -86,10 +90,10 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
         mid=(left+right)/2
         x=station_x(mid)
         # Text kept inside band, away from station row at Y=17.
-        y1=origin_y+8.5 if ip['direction']=='LEFT' else origin_y+7.7
-        y2=y1-2.6
-        text(msp,f"IA={ip['ia']}  R={ip['radius_m']:g}",x,y1,1.8,'ALIGNMENT_IP_TEXT')
-        text(msp,f"T.L={ip['tl_m']:.2f}  C.L={ip['cl_m']:.2f}",x,y2,1.8,'ALIGNMENT_IP_TEXT')
+        y1=origin_y+cfg.get('curve_info_left_y', 8.5) if ip['direction']=='LEFT' else origin_y+cfg.get('curve_info_right_y', 7.7)
+        y2=y1-cfg.get('curve_info_line_spacing', 2.6)
+        text(msp,f"IA={ip['ia']}  R={ip['radius_m']:g}",x,y1,cfg.get('curve_info_height', 1.8),'ALIGNMENT_IP_TEXT')
+        text(msp,f"T.L={ip['tl_m']:.2f}  C.L={ip['cl_m']:.2f}",x,y2,cfg.get('curve_info_height', 1.8),'ALIGNMENT_IP_TEXT')
     # Curve-element labels: exact station X, compact labels inside the 0..20 band.
     # Labels retain their approved placement; no element tick/leader lines are drawn.
     station_label_count = 0
@@ -103,15 +107,16 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
             is_right = ip['direction'] == 'RIGHT'
             # 3 mm toward the band interior from the actual curve diagram at this station.
             diagram_y = ybase + offset_at(sta)
-            label_y = diagram_y + (-3.0 if is_right else 3.0)
+            label_y = diagram_y + (-cfg.get('element_station_offset', 3.0) if is_right else cfg.get('element_station_offset', 3.0))
             km = int(sta // 1000)
             metres = sta - km * 1000
             station_text = f'{name}={km}km{metres:06.2f}'
             # Left alignment avoids encroaching on the preceding interval.
             from ezdxf.enums import TextEntityAlignment
-            entity = text(msp, station_text, x + 1.5, label_y, 2.4,
+            x_text = x + cfg.get('element_station_x_offset', 1.5)
+            entity = text(msp, station_text, x_text, label_y, cfg.get('element_station_height', 2.4),
                           'ALIGNMENT_ELEMENT_TEXT')
-            entity.set_placement((x + 1.5, label_y),
+            entity.set_placement((x_text, label_y),
                                  align=TextEntityAlignment.LEFT)
             station_label_count += 1
     return {'curve_count':len(ips),'curve_visible_count':visible,'curve_source':str(source),

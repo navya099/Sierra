@@ -115,12 +115,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
+    alignment_settings = None
     if preset is not None:
         validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
                         expected_scales=(options.horizontal_scale, options.vertical_scale))
         # S3-D6: one validated translation boundary for nested v2 presets.
         # All existing drawing code receives its established internal contract.
         preset = to_drawing_preset(preset)
+        alignment_settings = preset.get('_s3d7_alignment')
         p = preset['layout']
         options = replace(options,
             origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
@@ -510,6 +512,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                   layout.data_text_height, 'BAND_TEXT', rotation=90)
     # 준공도면 평면선형 밴드: 200m마다 수평 측점 숫자 표시.
     # Datum 구간과 무관한 원래 측점 좌표를 사용한다.
+    alignment_text_cfg = (alignment_settings or {}).get('text', {})
+    station_height = alignment_text_cfg.get('station_height', layout.data_text_height)
+    station_inset = alignment_text_cfg.get('station_top_inset', annotation_dims['alignment_station_top_inset'])
+    station_rotation = alignment_text_cfg.get('station_rotation', 0)
     alignment_stations = _multiples(start, end, options.alignment_station_interval)
     if options.include_alignment_placeholder:
         for sta in alignment_stations:
@@ -520,13 +526,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                              else str(station_m % 1000))
             # 평면선형 밴드 상단(Y=20)에서 3mm 아래.
             _text(msp, station_label, display_sta(sta),
-                  layout.origin_y + layout.alignment_top - annotation_dims['alignment_station_top_inset'],
-                  layout.data_text_height, 'BAND_TEXT')
+                  layout.origin_y + layout.alignment_top - station_inset,
+                  station_height, 'BAND_TEXT', rotation=station_rotation)
     alignment_info = {'curve_count': 0, 'curve_visible_count': 0, 'curve_source': None}
     if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
         alignment_info = draw_alignment_band(
             msp, options.horizontal_alignment_dxf, start, end,
-            display_sta, layout.origin_y, _text, _line)
+            display_sta, layout.origin_y, _text, _line,
+            alignment_settings=alignment_settings)
     # No internal vertical lines in the band: user-approved cleanup.
 
     circle_stations = sorted(p.sta for p in vip
