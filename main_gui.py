@@ -805,10 +805,13 @@ class AlignmentGUI:
                     print("[S3-D5.1] preset:", profile_options.layout_preset)
 
                     if profile_options.layout_preset:
-                        print(
-                            "[S3-D5.1] expansion:",
-                            profile_options.layout_preset["layout"]["expansion"]
-                        )
+                        active_preset = profile_options.layout_preset
+                        print("[S3-D6] schema_version:", active_preset["schema_version"])
+                        print("[S3-D6] preset_file:",
+                              f"{active_preset['mode']}/h{int(active_preset['horizontal_scale'])}_v{int(active_preset['vertical_scale'])}.json")
+                        if active_preset["schema_version"] == 1:
+                            print("[S3-D5.1] expansion:",
+                                  active_preset["layout"].get("expansion"))
 
                     if split_length is None:
                         result = create_profile_drawing(

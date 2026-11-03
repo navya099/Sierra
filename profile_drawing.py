@@ -17,6 +17,7 @@ from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
 from profile_presets.loader import load_preset, validate_preset
+from profile_presets.runtime import to_drawing_preset
 from profile_transform import ProfileTransform, DrawingMode
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
@@ -117,6 +118,9 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     if preset is not None:
         validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
                         expected_scales=(options.horizontal_scale, options.vertical_scale))
+        # S3-D6: one validated translation boundary for nested v2 presets.
+        # All existing drawing code receives its established internal contract.
+        preset = to_drawing_preset(preset)
         p = preset['layout']
         options = replace(options,
             origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
