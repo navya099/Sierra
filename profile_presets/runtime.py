@@ -70,4 +70,6 @@ def to_drawing_preset(source: dict) -> dict:
     # Internal-only drawing settings; do not expose legacy keys in user JSON.
     if 'alignment' in ba:
         result['_s3d7_alignment'] = deepcopy(ba['alignment'])
+    if 'structure_label' in an:
+        result['_s3d8_structure_label'] = deepcopy(an['structure_label'])
     return result

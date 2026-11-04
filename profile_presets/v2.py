@@ -66,10 +66,33 @@ def validate_layout_v2(layout):
                   'curve_info_right_y','element_station_offset','element_station_x_offset')))
         if band['alignment']['text']['station_rotation'] > 360:
             raise ValueError('layout.band.alignment.text.station_rotation: must be <= 360')
+    # S3-D8.2: optional scale-dependent profile structure-label dimensions.
+    structure = layout['annotations'].get('structure_label')
+    if structure is not None:
+        _object(structure, ('text', 'leader'), 'layout.annotations.structure_label')
+        _object(structure['text'], ('height', 'color', 'rotation', 'title_offset_factor', 'station_offset_factor'), 'layout.annotations.structure_label.text')
+        _object(structure['leader'], ('vertical_height', 'angle', 'margin'), 'layout.annotations.structure_label.leader')
+        for key in ('height',):
+            _num(structure['text'][key], 'structure_label.text.'+key)
+        for key in ('vertical_height', 'margin'):
+            _num(structure['leader'][key], 'structure_label.leader.'+key)
+        for group_name, keys in (('text', ('rotation', 'title_offset_factor', 'station_offset_factor')),
+                                 ('leader', ('angle',))):
+            for key in keys:
+                value = structure[group_name][key]
+                if type(value) not in (int, float) or not math.isfinite(value):
+                    raise ValueError('structure_label.'+group_name+'.'+key+': finite number required')
+        color = structure['text']['color']
+        if type(color) is not int or not 1 <= color <= 255:
+            raise ValueError('structure_label.text.color: ACI 1..255 required')
+        if not 0 <= structure['text']['rotation'] <= 360 or not 0 <= structure['leader']['angle'] < 90:
+            raise ValueError('structure_label: invalid angle')
     for group, subgroups in LAYOUT_FIELDS.items():
         expected_groups = tuple(subgroups) + (('alignment',) if group == 'band' and 'alignment' in layout[group] else ())
         if group == 'annotations' and 'alignment' in layout['band']:
             expected_groups = tuple(k for k in expected_groups if k != 'alignment') if 'alignment' not in layout[group] else expected_groups
+        if group == 'annotations' and structure is not None:
+            expected_groups += ('structure_label',)
         _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
             if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:

@@ -21,6 +21,38 @@ class LabelSettings:
         if not self.bridge_type.strip():
             raise ValueError('교량 형식은 비워둘 수 없습니다.')
 
+@dataclass(frozen=True)
+class ProfileLabelStyle:
+    text_height: float = 3.0
+    color: int = 1
+    line_margin: float = 3.0
+    vertical_height: float = 30.0
+    leader_angle: float = 30.0
+    text_rotation: float = 30.0
+    title_offset_factor: float = 0.55
+    station_offset_factor: float = -1.20
+
+    @classmethod
+    def from_preset(cls, config):
+        if config is None:
+            return cls()
+        text, leader = config['text'], config['leader']
+        return cls(text['height'], text['color'], leader['margin'],
+                   leader['vertical_height'], leader['angle'], text['rotation'],
+                   text['title_offset_factor'], text['station_offset_factor'])
+
+    def validate(self):
+        values = (self.text_height, self.line_margin, self.vertical_height)
+        if any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in values):
+            raise ValueError('구조물 레이블 문자 높이·사선 여유·수직선 높이는 양수여야 합니다.')
+        for v in (self.leader_angle, self.text_rotation, self.title_offset_factor, self.station_offset_factor):
+            if type(v) not in (int, float) or not math.isfinite(v):
+                raise ValueError('구조물 레이블 치수는 유한한 수여야 합니다.')
+        if not 0 <= self.leader_angle < 90 or not 0 <= self.text_rotation <= 360:
+            raise ValueError('구조물 레이블 각도가 유효하지 않습니다.')
+        if type(self.color) is not int or not 1 <= self.color <= 255:
+            raise ValueError('구조물 레이블 색상은 ACI 1~255이어야 합니다.')
+
 def station_text(sta):
     sign = '-' if sta < 0 else ''
     hundredths = int(math.floor(abs(sta)*100 + 0.5))
@@ -45,14 +77,16 @@ def _width_estimate(text, height):
 
 def draw_structure_labels(msp, structures, settings, sheet_start, sheet_end,
                           datum_segments, elevation_at, display_sta, display_el,
-                          layer='STRUCTURE_LABEL'):
+                          layer='STRUCTURE_LABEL', style: ProfileLabelStyle | None = None):
     settings.validate()
+    style = style or ProfileLabelStyle(settings.text_height, settings.color, settings.line_margin)
+    style.validate()
     if layer not in msp.doc.layers:
-        msp.doc.layers.new(layer, dxfattribs={'color':settings.color,'lineweight':18})
+        msp.doc.layers.new(layer, dxfattribs={'color':style.color,'lineweight':18})
     else:
-        msp.doc.layers.get(layer).dxf.color=settings.color
+        msp.doc.layers.get(layer).dxf.color=style.color
     count=0
-    angle=math.radians(30)
+    angle=math.radians(style.leader_angle)
     ux,uy=math.cos(angle),math.sin(angle)
     for structure in structures or ():
         lines=label_lines(structure,settings)
@@ -65,15 +99,15 @@ def draw_structure_labels(msp, structures, settings, sheet_start, sheet_end,
         datum=next((seg for seg in datum_segments if seg.start_sta-1e-7 <= sta+1e-6 <= seg.end_sta+1e-7),None)
         if datum is None: continue
         x0=display_sta(sta); y0=display_el(elevation_at(sta),datum.datum_el)
-        x1,y1=x0,y0+30.0
-        length=max(_width_estimate(t,settings.text_height) for t in lines)+settings.line_margin
+        x1,y1=x0,y0+style.vertical_height
+        length=max(_width_estimate(t,style.text_height) for t in lines)+style.line_margin
         x2,y2=x1+length*ux,y1+length*uy
         msp.add_line((x0,y0),(x1,y1),dxfattribs={'layer':layer})
         msp.add_line((x1,y1),(x2,y2),dxfattribs={'layer':layer})
         # TEXT insertion locations parallel to the sloped guide, offset along normal.
-        for text,offset in ((lines[0],settings.text_height*0.55),(lines[1],-settings.text_height*1.20)):
+        for text,offset in ((lines[0],style.text_height*style.title_offset_factor),(lines[1],style.text_height*style.station_offset_factor)):
             tx=x1-uy*offset;ty=y1+ux*offset
-            ent=msp.add_text(text,dxfattribs={'layer':layer,'style':'KOREAN','height':settings.text_height,'rotation':30})
+            ent=msp.add_text(text,dxfattribs={'layer':layer,'style':'KOREAN','height':style.text_height,'rotation':style.text_rotation})
             ent.set_placement((tx,ty),align=TextEntityAlignment.LEFT)
         count+=1
     return count
