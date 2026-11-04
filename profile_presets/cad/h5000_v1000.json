@@ -163,7 +163,15 @@
           "color": 1,
           "rotation": 30.0,
           "title_offset_factor": 0,
-          "station_offset_factor": 9
+          "station_offset_factor": 0,
+          "title": {
+            "x_offset": 0,
+            "y_offset": 0
+          },
+          "station": {
+            "x_offset": 11,
+            "y_offset": -15
+          }
         },
         "leader": {
           "vertical_height": 130.0,

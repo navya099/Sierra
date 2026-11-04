@@ -70,13 +70,24 @@ def validate_layout_v2(layout):
     structure = layout['annotations'].get('structure_label')
     if structure is not None:
         _object(structure, ('text', 'leader'), 'layout.annotations.structure_label')
-        _object(structure['text'], ('height', 'color', 'rotation', 'title_offset_factor', 'station_offset_factor'), 'layout.annotations.structure_label.text')
+        text_cfg = structure['text']
+        required_text = ('height', 'color', 'rotation')
+        optional_text = ('title_offset_factor', 'station_offset_factor', 'title', 'station')
+        if not isinstance(text_cfg, dict) or any(k not in text_cfg for k in required_text) or any(k not in required_text + optional_text for k in text_cfg):
+            raise ValueError('layout.annotations.structure_label.text: invalid keys')
+        for label in ('title', 'station'):
+            if label in text_cfg:
+                _object(text_cfg[label], ('x_offset', 'y_offset'), 'layout.annotations.structure_label.text.' + label)
+                for axis in ('x_offset', 'y_offset'):
+                    value = text_cfg[label][axis]
+                    if type(value) not in (int, float) or not math.isfinite(value):
+                        raise ValueError('structure_label.text.' + label + '.' + axis + ': finite number required')
         _object(structure['leader'], ('vertical_height', 'angle', 'margin'), 'layout.annotations.structure_label.leader')
         for key in ('height',):
             _num(structure['text'][key], 'structure_label.text.'+key)
         for key in ('vertical_height', 'margin'):
             _num(structure['leader'][key], 'structure_label.leader.'+key)
-        for group_name, keys in (('text', ('rotation', 'title_offset_factor', 'station_offset_factor')),
+        for group_name, keys in (('text', ('rotation',) + tuple(k for k in ('title_offset_factor', 'station_offset_factor') if k in text_cfg)),
                                  ('leader', ('angle',))):
             for key in keys:
                 value = structure[group_name][key]
