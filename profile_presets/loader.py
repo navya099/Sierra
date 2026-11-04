@@ -185,3 +185,14 @@ def list_presets(*, root=None):
                 raise ValueError(f'filename mismatch: {path}')
             items.append({'mode': mode, 'name': data['name'], 'horizontal_scale': data['horizontal_scale'], 'vertical_scale': data['vertical_scale'], 'standard_type': data['standard_type'], 'status': data['status']})
     return items
+
+
+def load_preset_file(path, *, expected_mode=None, expected_scales=None):
+    """Load a user-selected JSON file, independently of the built-in preset directory."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        raise FileNotFoundError(f'custom preset not found: {candidate}')
+    with candidate.open(encoding='utf-8-sig') as stream:
+        data = json.load(stream)
+    validate_preset(data, expected_mode=expected_mode, expected_scales=expected_scales)
+    return copy.deepcopy(data)

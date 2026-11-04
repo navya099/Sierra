@@ -16,7 +16,7 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
-from profile_presets.loader import load_preset, validate_preset
+from profile_presets.loader import load_preset, load_preset_file, validate_preset
 from profile_presets.runtime import to_drawing_preset
 from profile_transform import ProfileTransform, DrawingMode
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
@@ -65,6 +65,7 @@ class DrawingOptions:
     sheet_start_sta: float | None = None
     sheet_end_sta: float | None = None
     layout_preset: dict | None = None  # S3-D2: explicit opt-in; legacy output unchanged
+    custom_preset_path: str | None = None  # S3-D9: explicit user JSON file
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -825,4 +826,9 @@ def options_with_preset(options: DrawingOptions) -> DrawingOptions:
     """Load exact mode/H/V preset; no silent fallback or alteration of options."""
     from profile_transform import DrawingMode
     mode = options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode
-    return replace(options, layout_preset=load_preset(mode, options.horizontal_scale, options.vertical_scale))
+    if options.custom_preset_path:
+        preset = load_preset_file(options.custom_preset_path, expected_mode=mode,
+                                  expected_scales=(options.horizontal_scale, options.vertical_scale))
+    else:
+        preset = load_preset(mode, options.horizontal_scale, options.vertical_scale)
+    return replace(options, layout_preset=preset)

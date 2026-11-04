@@ -612,8 +612,11 @@ class AlignmentGUI:
             '사용자 지정': None,
         }
         preset_var = tk.StringVar(value='실시설계 H1000 / V400')
+        custom_preset_var = tk.StringVar(value='')
         def apply_preset(event=None):
             selected = presets[preset_var.get()]
+            if selected is not None:
+                custom_preset_var.set('')
             if selected is not None:
                 horizontal_var.set(str(selected[0]))
                 vertical_var.set(str(selected[1]))
@@ -636,6 +639,26 @@ class AlignmentGUI:
         preset_box = ttk.Combobox(frame, textvariable=preset_var, values=list(presets), state='readonly', width=28)
         preset_box.grid(row=1, column=1, columnspan=2, sticky='w')
         preset_box.bind('<<ComboboxSelected>>', apply_preset)
+        def browse_custom_preset():
+            selected = filedialog.askopenfilename(parent=win, title='사용자 정의 JSON 프리셋 선택',
+                filetypes=[('JSON 프리셋', '*.json'), ('모든 파일', '*.*')])
+            if not selected:
+                return
+            try:
+                from profile_presets.loader import load_preset_file
+                preset = load_preset_file(selected)
+            except (OSError, ValueError, TypeError) as exc:
+                messagebox.showerror('커스텀 프리셋 오류', str(exc), parent=win)
+                return
+            custom_preset_var.set(selected)
+            mode_var.set(preset['mode'])
+            horizontal_var.set(str(preset['horizontal_scale']))
+            vertical_var.set(str(preset['vertical_scale']))
+            preset_var.set('사용자 지정')
+        ttk.Button(frame, text='커스텀 JSON 불러오기', command=browse_custom_preset).grid(
+            row=1, column=3, sticky='w', padx=(8, 0))
+        ttk.Label(frame, textvariable=custom_preset_var, foreground='gray', wraplength=440).grid(
+            row=13, column=0, columnspan=4, sticky='w', pady=(4, 0))
         ttk.Label(frame, text='수평 축척 (1:H)').grid(row=2, column=0, sticky='w', pady=5)
         ttk.Entry(frame, textvariable=horizontal_var, width=17).grid(row=2, column=1, sticky='w')
         ttk.Checkbutton(frame, text='수직 과장 적용 (H/V)', variable=exaggeration_var).grid(row=3, column=0, columnspan=3, sticky='w', pady=5)
@@ -687,6 +710,14 @@ class AlignmentGUI:
                 except ValueError:
                     messagebox.showerror('분할 길이', '0보다 큰 분할 길이(m)를 입력하세요.', parent=win)
                     return
+            if custom_preset_var.get():
+                try:
+                    from profile_presets.loader import load_preset_file
+                    load_preset_file(custom_preset_var.get(), expected_mode=mode_var.get(),
+                                     expected_scales=(h, v))
+                except (OSError, ValueError, TypeError) as exc:
+                    messagebox.showerror('커스텀 프리셋 오류', str(exc), parent=win)
+                    return
             self.last_alignment_dxf = plan_path
             result['value'] = (DrawingOptions(horizontal_scale=h, vertical_scale=v,
                 drawing_mode=mode_var.get(), vertical_exaggeration_enabled=exaggeration_var.get(),
@@ -695,7 +726,8 @@ class AlignmentGUI:
                 band_interval=(20 if h <= 1000 else 100 if h <= 5000 else 500),
                 alignment_station_interval=(200 if h <= 1000 else 1000 if h <= 5000 else 5000),
                 auto_datum=datum_var.get(),
-                horizontal_alignment_dxf=plan_path or None), profile_var.get(), plan_var.get(), split_length)
+                horizontal_alignment_dxf=plan_path or None,
+                custom_preset_path=custom_preset_var.get() or None), profile_var.get(), plan_var.get(), split_length)
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
@@ -808,6 +840,7 @@ class AlignmentGUI:
                         active_preset = profile_options.layout_preset
                         print("[S3-D6] schema_version:", active_preset["schema_version"])
                         print("[S3-D6] preset_file:",
+                              drawing_options.custom_preset_path or
                               f"{active_preset['mode']}/h{int(active_preset['horizontal_scale'])}_v{int(active_preset['vertical_scale'])}.json")
                         if active_preset["schema_version"] == 1:
                             print("[S3-D5.1] expansion:",
