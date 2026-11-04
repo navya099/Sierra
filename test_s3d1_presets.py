@@ -1,6 +1,7 @@
 import copy
 import unittest
-from profile_presets import load_preset, list_presets, validate_preset
+from profile_presets import list_presets, validate_preset
+from test_preset_fixture import load_preset
 
 class PresetTests(unittest.TestCase):
     def test_all_six(self):

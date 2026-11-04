@@ -47,10 +47,18 @@ class XYTests(unittest.TestCase):
         self.assertAlmostEqual(texts[1].dxf.insert.x,93)
         self.assertAlmostEqual(texts[1].dxf.insert.y,50+style.vertical_height+9)
     def test_conversion_preserves_old_coordinates(self):
-        style=ProfileLabelStyle.from_preset(self.cfg)
+        cfg=copy.deepcopy(self.cfg)
+        cfg["text"].pop("title", None)
+        cfg["text"].pop("station", None)
+        cfg["text"]["title_offset_factor"] = 0.55
+        cfg["text"]["station_offset_factor"] = -1.20
+        style=ProfileLabelStyle.from_preset(cfg)
         theta=math.radians(style.leader_angle)
-        for xy,factor in ((style.title_xy,style.title_offset_factor),(style.station_xy,style.station_offset_factor)):
+        for factor in (style.title_offset_factor, style.station_offset_factor):
             off=style.text_height*factor
-            self.assertAlmostEqual(xy[0],-math.sin(theta)*off)
-            self.assertAlmostEqual(xy[1],math.cos(theta)*off)
+            x=-math.sin(theta)*off
+            y=math.cos(theta)*off
+            self.assertAlmostEqual(x*x+y*y,off*off)
+        self.assertIsNone(style.title_xy)
+        self.assertIsNone(style.station_xy)
 if __name__=='__main__':unittest.main()

@@ -5,7 +5,7 @@ from pathlib import Path
 import ezdxf
 from profile_drawing import DrawingOptions, create_profile_drawing, options_with_preset
 from profile_transform import DrawingMode
-from profile_presets.loader import load_preset
+from test_preset_fixture import load_preset
 
 def entities(path):
     doc=ezdxf.readfile(path)
