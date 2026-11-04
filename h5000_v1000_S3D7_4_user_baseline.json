@@ -69,6 +69,14 @@
               "PS": {
                 "align": "LEFT",
                 "x_offset": 0
+              },
+              "BC": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "EC": {
+                "align": "LEFT",
+                "x_offset": 0
               }
             },
             "y_offset": {
