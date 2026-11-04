@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "name": "REPORT H25000/V5000 overview",
+  "mode": "report",
+  "horizontal_scale": 25000,
+  "vertical_scale": 5000,
+  "standard_type": "overview",
+  "status": "provisional",
+  "layout": {
+    "sheet": {
+      "origin_x": 0,
+      "origin_y": 0,
+      "label_column_width": 40,
+      "start_margin": 10,
+      "end_margin": 10
+    },
+    "profile": {
+      "plot_lower_y": 150,
+      "plot_upper_y": 250,
+      "datum_step_m": 10,
+      "datum_safety_margin_m": 5
+    },
+    "band": {
+      "alignment_height": 20,
+      "ground_height": 20,
+      "design_height": 20,
+      "fill_height": 15,
+      "cut_height": 15,
+      "distance_rule_offset": 20,
+      "grade_rule_offset": 40
+    },
+    "text": {
+      "data_text_height": 2.4,
+      "label_text_height": 5,
+      "datum_text_height": 2.4,
+      "vip_text_height": 2.0,
+      "annotation_row_height": 6
+    },
+    "symbols": {
+      "vip_circle_radius": 8,
+      "datum_break_width": 2.5,
+      "datum_break_height": 7
+    },
+    "stations": {
+      "station_interval": 500,
+      "major_interval": 5000,
+      "band_interval": 500,
+      "alignment_station_interval": 5000
+    },
+    "placement": {
+      "enabled": false,
+      "band_to_profile_gap": 30.0,
+      "reserved_structure_depth": 0.0,
+      "structure_clearance": 10.0,
+      "profile_plot_height": 100.0,
+      "datum_label_offset": 12.0
+    },
+    "expansion": {
+      "enabled": false,
+      "band_height_factor": 5.0,
+      "label_column_width": 200.0,
+      "text_height_factor": 5.0,
+      "profile_plot_height": 500.0,
+      "use_placement_clearance": true
+    },
+    "absolute_dimensions": {
+      "enabled": false,
+      "sheet": {
+        "label_column_width": 40
+      },
+      "band": {
+        "alignment_height": 20,
+        "ground_height": 20,
+        "design_height": 20,
+        "fill_height": 15,
+        "cut_height": 15,
+        "distance_rule_offset": 20,
+        "grade_rule_offset": 40
+      },
+      "text": {
+        "data_text_height": 2.4,
+        "label_text_height": 5,
+        "datum_text_height": 2.4,
+        "vip_text_height": 2.0,
+        "annotation_row_height": 6
+      },
+      "profile": {
+        "plot_lower_y": 150.0,
+        "plot_height": 100.0,
+        "band_to_profile_gap": 30.0,
+        "reserved_structure_depth": 0.0,
+        "structure_clearance": 10.0,
+        "use_placement_clearance": false
+      }
+    }
+  },
+  "visibility": {
+    "minor_station_labels": false,
+    "vertical_curve_details": false,
+    "pier_details": false,
+    "datum_labels": true,
+    "alignment_band": true,
+    "ground_profile": true,
+    "design_profile": true
+  },
+  "notes": "S3-D5.2: absolute dimensions are editable per preset; H5000 CAD values are provisional. Legacy expansion disabled.",
+  "visibility_policy": {
+    "enabled": false,
+    "minor_grid": true,
+    "vertical_curve_annotations": true,
+    "vip_annotations": true,
+    "datum_labels": true,
+    "alignment_geometry": true,
+    "ground_profile": true,
+    "design_profile": true,
+    "bridge_piers": true,
+    "bridge_abutments": true,
+    "bridge_girders": true,
+    "structure_labels": true,
+    "tunnel_portals": true,
+    "tunnel_bodies": true
+  }
+}

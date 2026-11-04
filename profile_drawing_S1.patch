@@ -1,0 +1,43 @@
+--- a/profile_drawing.py
++++ b/profile_drawing.py
+@@ -16,6 +16,7 @@
+ from dxf_reader import extract_profile
+ from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
+ from profile_layout import ProfileLayout
++from profile_transform import ProfileTransform
+ from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
+ from alignment_band import draw_alignment_band
+ from bridge_girder import GirderSettings, draw_bridge_girders
+@@ -191,13 +192,20 @@
+         datum_segments = [DatumSegment(start, end, graph_bottom)]
+     graph_bottom = datum_segments[0].datum_el
+ 
++    transform = ProfileTransform(
++        horizontal_scale=options.horizontal_scale,
++        vertical_scale=options.vertical_scale,
++        origin_x=layout.origin_x, origin_y=layout.origin_y,
++        label_column_width=layout.label_column_width,
++        start_margin=options.start_margin, plot_lower_y=options.plot_lower_y,
++    )
++
+     def display_el(el, datum_el):
+-        return layout.elevation_y(el, datum_el, options.plot_lower_y,
+-                                  options.vertical_scale)
++        return transform.elevation_y(el, datum_el)
+ 
+     def display_sta(sta):
+         # Start/end margins are geometric whitespace, NOT extra railway stationing.
+-        return layout.station_x(sta, start, options.horizontal_scale) + options.start_margin
++        return transform.station_x(sta, start)
+     graph_bottom_y = graph_base_y
+     data_left = layout.data_left_x  # left band/grade-rule boundary
+     data_right = display_sta(end) + options.end_margin  # right boundary
+@@ -208,7 +216,7 @@
+     distance_rule_y = layout.distance_rule_y
+     top = layout.origin_y + layout.band_top
+     bottom = layout.origin_y
+-    factor = options.horizontal_scale / options.vertical_scale
++    factor = transform.vertical_exaggeration
+     doc = ezdxf.new('R2010')
+     doc.header['$INSUNITS'] = 4  # millimetres: output paper-space geometry
+     doc.styles.new('KOREAN', dxfattribs={'font': 'malgun.ttf'})

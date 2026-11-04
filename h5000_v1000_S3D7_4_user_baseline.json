@@ -1,0 +1,188 @@
+{
+  "schema_version": 2,
+  "name": "CAD H5000/V1000 simplified",
+  "mode": "cad",
+  "horizontal_scale": 5000,
+  "vertical_scale": 1000,
+  "standard_type": "simplified",
+  "status": "provisional",
+  "layout": {
+    "sheet": {
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "margin": {
+        "start": 60,
+        "end": 60
+      },
+      "drawing_limits": {
+        "plot_lower_y": 150,
+        "plot_upper_y": 250
+      }
+    },
+    "band": {
+      "column": {
+        "label_width": 105
+      },
+      "height": {
+        "alignment": 80,
+        "ground": 80,
+        "design": 80,
+        "fill": 60,
+        "cut": 60
+      },
+      "text": {
+        "data_height": 15,
+        "label_height": 20
+      },
+      "alignment": {
+        "diagram": {
+          "baseline_offset": 40.0,
+          "curve_offset": 20
+        },
+        "text": {
+          "station_height": 15,
+          "station_top_inset": 15,
+          "station_rotation": 0,
+          "curve_info_height": 15,
+          "curve_info_left_y": 60,
+          "curve_info_right_y": 50,
+          "curve_info_line_spacing": 20,
+          "element_station_height": 15,
+          "element_station_offset": 20,
+          "element_station_x_offset": 1.5,
+          "element_station": {
+            "placement": {
+              "SP": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "PC": {
+                "align": "LEFT",
+                "x_offset": 0
+              },
+              "CP": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "PS": {
+                "align": "LEFT",
+                "x_offset": 0
+              },
+              "BC": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "EC": {
+                "align": "LEFT",
+                "x_offset": 0
+              }
+            },
+            "y_offset": {
+              "LEFT": 20,
+              "RIGHT": 0
+            }
+          }
+        }
+      }
+    },
+    "profile": {
+      "plot": {
+        "height": 500.0
+      },
+      "datum": {
+        "step_m": 10,
+        "safety_margin_m": 5,
+        "text_height": 15
+      },
+      "clearance": {
+        "band_to_profile_gap": 30.0,
+        "reserved_structure_depth": 250.0,
+        "structure_clearance": 10.0,
+        "use_placement_clearance": true
+      }
+    },
+    "stations": {
+      "grid": {
+        "sub_interval": 40,
+        "main_interval": 200
+      },
+      "text": {
+        "band_interval": 40,
+        "alignment_station_interval": 200
+      }
+    },
+    "symbols": {
+      "vip": {
+        "circle_radius": 40
+      },
+      "datum": {
+        "break_width": 2.5,
+        "break_height": 7
+      }
+    },
+    "annotations": {
+      "datum": {
+        "label_dx": 11,
+        "label_dy": 12,
+        "break_kink_dy": 3
+      },
+      "vip": {
+        "text_height": 15,
+        "elevation_text_height": 15,
+        "caption_text_height": 2.4,
+        "caption_gap_factor": 0.6,
+        "distance_text_offset": 2,
+        "distance_text_height": 10,
+        "arrow_half_height": 0.75,
+        "arrow_length": 1.25,
+        "rule": {
+          "distance_offset": 70,
+          "grade_offset": 140
+        }
+      },
+      "vertical_curve": {
+        "ordinate_offset": 20,
+        "endpoint_text_offset": 10,
+        "endpoint_line_height": 26,
+        "text_height": 2.4
+      },
+      "grade": {
+        "text_height": 50
+      },
+      "distance": {
+        "text_height": 25
+      },
+      "row": {
+        "height": 30
+      }
+    }
+  },
+  "visibility": {
+    "minor_station_labels": false,
+    "vertical_curve_details": true,
+    "pier_details": false,
+    "datum_labels": true,
+    "alignment_band": true,
+    "ground_profile": true,
+    "design_profile": true
+  },
+  "visibility_policy": {
+    "enabled": true,
+    "minor_grid": true,
+    "vertical_curve_annotations": true,
+    "vip_annotations": true,
+    "datum_labels": false,
+    "alignment_geometry": true,
+    "ground_profile": true,
+    "design_profile": true,
+    "bridge_piers": true,
+    "bridge_abutments": true,
+    "bridge_girders": true,
+    "structure_labels": true,
+    "tunnel_portals": true,
+    "tunnel_bodies": true
+  },
+  "notes": "Schema v2 nested layout draft based on GUI-validated S3-D5.3 H5000/V1000 third revision. Loader/GUI migration and DXF regression verification required."
+}

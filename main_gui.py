@@ -20,7 +20,7 @@ import ezdxf
 
 from dxf_watcher import DXFWatcher
 from profile_scale import ProfileScale
-from profile_drawing import DrawingOptions, create_profile_drawing
+from profile_drawing import DrawingOptions, create_profile_drawing, options_with_preset
 from final_plan_vip import create_final_plan
 from vertical_curve import VerticalAlignment
 from structure_gui import StructureEditor
@@ -602,42 +602,97 @@ class AlignmentGUI:
         frame = ttk.Frame(win, padding=18)
         frame.pack(fill='both', expand=True)
         vertical_var = tk.StringVar(value='400')
+        horizontal_var = tk.StringVar(value='1000')
+        mode_var = tk.StringVar(value='report')  # preserve legacy GUI default
+        exaggeration_var = tk.BooleanVar(value=True)
+        presets = {
+            '실시설계 H1000 / V400': (1000, 400),
+            '기본계획·예타 H5000 / V1000': (5000, 1000),
+            '국가철도망 H25000 / V5000': (25000, 5000),
+            '사용자 지정': None,
+        }
+        preset_var = tk.StringVar(value='실시설계 H1000 / V400')
+        custom_preset_var = tk.StringVar(value='')
+        def apply_preset(event=None):
+            selected = presets[preset_var.get()]
+            if selected is not None:
+                custom_preset_var.set('')
+            if selected is not None:
+                horizontal_var.set(str(selected[0]))
+                vertical_var.set(str(selected[1]))
+        def mark_custom(*_):
+            pair = (horizontal_var.get().strip(), vertical_var.get().strip())
+            if pair not in {('1000','400'), ('5000','1000'), ('25000','5000')}:
+                preset_var.set('사용자 지정')
+        horizontal_var.trace_add('write', mark_custom)
+        vertical_var.trace_add('write', mark_custom)
         split_var = tk.BooleanVar(value=False)
         split_length_var = tk.StringVar(value='700')
         datum_var = tk.BooleanVar(value=True)
         alignment_var = tk.StringVar(value=getattr(self, 'last_alignment_dxf', ''))
         profile_var = tk.BooleanVar(value=True)
         plan_var = tk.BooleanVar(value=bool(alignment_var.get()))
-        ttk.Label(frame, text='종단 축척 (1:V)').grid(row=0, column=0, sticky='w', padx=(0, 14), pady=8)
+        ttk.Label(frame, text='도면 모드').grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Radiobutton(frame, text='생성 도면 (CAD, X=1:1)', variable=mode_var, value='cad').grid(row=0, column=1, sticky='w')
+        ttk.Radiobutton(frame, text='출력 도면 (보고서, H축척 적용)', variable=mode_var, value='report').grid(row=0, column=2, columnspan=2, sticky='w')
+        ttk.Label(frame, text='축척 프리셋').grid(row=1, column=0, sticky='w', pady=5)
+        preset_box = ttk.Combobox(frame, textvariable=preset_var, values=list(presets), state='readonly', width=28)
+        preset_box.grid(row=1, column=1, columnspan=2, sticky='w')
+        preset_box.bind('<<ComboboxSelected>>', apply_preset)
+        def browse_custom_preset():
+            selected = filedialog.askopenfilename(parent=win, title='사용자 정의 JSON 프리셋 선택',
+                filetypes=[('JSON 프리셋', '*.json'), ('모든 파일', '*.*')])
+            if not selected:
+                return
+            try:
+                from profile_presets.loader import load_preset_file
+                preset = load_preset_file(selected)
+            except (OSError, ValueError, TypeError) as exc:
+                messagebox.showerror('커스텀 프리셋 오류', str(exc), parent=win)
+                return
+            custom_preset_var.set(selected)
+            mode_var.set(preset['mode'])
+            horizontal_var.set(str(preset['horizontal_scale']))
+            vertical_var.set(str(preset['vertical_scale']))
+            preset_var.set('사용자 지정')
+        ttk.Button(frame, text='커스텀 JSON 불러오기', command=browse_custom_preset).grid(
+            row=1, column=3, sticky='w', padx=(8, 0))
+        ttk.Label(frame, textvariable=custom_preset_var, foreground='gray', wraplength=440).grid(
+            row=13, column=0, columnspan=4, sticky='w', pady=(4, 0))
+        ttk.Label(frame, text='수평 축척 (1:H)').grid(row=2, column=0, sticky='w', pady=5)
+        ttk.Entry(frame, textvariable=horizontal_var, width=17).grid(row=2, column=1, sticky='w')
+        ttk.Checkbutton(frame, text='수직 과장 적용 (H/V)', variable=exaggeration_var).grid(row=3, column=0, columnspan=3, sticky='w', pady=5)
+        ttk.Label(frame, text='종단 축척 (1:V)').grid(row=4, column=0, sticky='w', padx=(0, 14), pady=8)
         entry = ttk.Entry(frame, textvariable=vertical_var, width=17)
-        entry.grid(row=0, column=1, sticky='ew', pady=8)
-        ttk.Label(frame, text='종단 분할 옵션').grid(row=1, column=0, sticky='w', padx=(0, 14), pady=8)
-        ttk.Checkbutton(frame, text='독립 DXF 분할', variable=split_var).grid(row=1, column=1, sticky='w', pady=8)
-        ttk.Label(frame, text='분할 길이 (m)').grid(row=1, column=2, sticky='w', padx=(12,4))
-        ttk.Entry(frame, textvariable=split_length_var, width=9).grid(row=1, column=3, sticky='w')
-        ttk.Checkbutton(frame, text='Datum 표고 자동 적용 (종단 절단)', variable=datum_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 3))
-        ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 10))
-        ttk.Checkbutton(frame, text='종평면도 출력 (final_result.dxf)', variable=profile_var).grid(row=4, column=0, columnspan=2, sticky='w')
-        ttk.Checkbutton(frame, text='최종 평면도 출력 (final_plan_result.dxf)', variable=plan_var).grid(row=5, column=0, columnspan=2, sticky='w')
+        entry.grid(row=4, column=1, sticky='ew', pady=8)
+        ttk.Label(frame, text='종단 분할 옵션').grid(row=5, column=0, sticky='w', padx=(0, 14), pady=8)
+        ttk.Checkbutton(frame, text='독립 DXF 분할', variable=split_var).grid(row=5, column=1, sticky='w', pady=8)
+        ttk.Label(frame, text='분할 길이 (m)').grid(row=5, column=2, sticky='w', padx=(12,4))
+        ttk.Entry(frame, textvariable=split_length_var, width=9).grid(row=5, column=3, sticky='w')
+        ttk.Checkbutton(frame, text='Datum 표고 자동 적용 (종단 절단)', variable=datum_var).grid(row=6, column=0, columnspan=2, sticky='w', pady=(5, 3))
+        ttk.Label(frame, text='해제 시: 기준 표고 고정 · 상한선 없음 · 종단 절단 없음', foreground='gray').grid(row=7, column=0, columnspan=2, sticky='w', pady=(0, 10))
+        ttk.Checkbutton(frame, text='종평면도 출력 (final_result.dxf)', variable=profile_var).grid(row=8, column=0, columnspan=2, sticky='w')
+        ttk.Checkbutton(frame, text='최종 평면도 출력 (final_plan_result.dxf)', variable=plan_var).grid(row=9, column=0, columnspan=2, sticky='w')
         buttons = ttk.Frame(frame)
-        ttk.Label(frame, text='평면선형 DXF (원본)').grid(row=6, column=0, sticky='w', pady=6)
-        ttk.Entry(frame, textvariable=alignment_var, width=42).grid(row=6, column=1, sticky='ew', pady=6)
+        ttk.Label(frame, text='평면선형 DXF (원본)').grid(row=10, column=0, sticky='w', pady=6)
+        ttk.Entry(frame, textvariable=alignment_var, width=42).grid(row=10, column=1, sticky='ew', pady=6)
         def browse_alignment():
             selected = filedialog.askopenfilename(parent=win, title='평면선형 DXF 선택',
                 filetypes=[('DXF 도면', '*.dxf')])
             if selected:
                 alignment_var.set(selected)
                 plan_var.set(True)
-        ttk.Button(frame, text='평면선형 DXF 찾아보기', command=browse_alignment).grid(row=7, column=0, columnspan=2, sticky='w', pady=(0,8))
-        buttons.grid(row=8, column=0, columnspan=2, sticky='e')
+        ttk.Button(frame, text='평면선형 DXF 찾아보기', command=browse_alignment).grid(row=11, column=0, columnspan=2, sticky='w', pady=(0,8))
+        buttons.grid(row=12, column=0, columnspan=2, sticky='e')
         result = {'value': None}
         def accept():
             try:
                 v = float(vertical_var.get().strip())
-                if not math.isfinite(v) or v <= 0:
+                h = float(horizontal_var.get().strip())
+                if not all(math.isfinite(x) and x > 0 for x in (h, v)):
                     raise ValueError
             except ValueError:
-                messagebox.showerror('축척 입력 오류', '종단 축척은 0보다 큰 숫자여야 합니다.', parent=win)
+                messagebox.showerror('축척 입력 오류', 'H/V 축척은 모두 0보다 큰 유한한 숫자여야 합니다.', parent=win)
                 return
             if not profile_var.get() and not plan_var.get():
                 messagebox.showerror('출력 옵션', '최소 한 종류의 출력을 선택하세요.', parent=win)
@@ -655,9 +710,24 @@ class AlignmentGUI:
                 except ValueError:
                     messagebox.showerror('분할 길이', '0보다 큰 분할 길이(m)를 입력하세요.', parent=win)
                     return
+            if custom_preset_var.get():
+                try:
+                    from profile_presets.loader import load_preset_file
+                    load_preset_file(custom_preset_var.get(), expected_mode=mode_var.get(),
+                                     expected_scales=(h, v))
+                except (OSError, ValueError, TypeError) as exc:
+                    messagebox.showerror('커스텀 프리셋 오류', str(exc), parent=win)
+                    return
             self.last_alignment_dxf = plan_path
-            result['value'] = (DrawingOptions(vertical_scale=v, auto_datum=datum_var.get(),
-                horizontal_alignment_dxf=plan_path or None), profile_var.get(), plan_var.get(), split_length)
+            result['value'] = (DrawingOptions(horizontal_scale=h, vertical_scale=v,
+                drawing_mode=mode_var.get(), vertical_exaggeration_enabled=exaggeration_var.get(),
+                station_interval=(20 if h <= 1000 else 100 if h <= 5000 else 500),
+                major_interval=(200 if h <= 1000 else 1000 if h <= 5000 else 5000),
+                band_interval=(20 if h <= 1000 else 100 if h <= 5000 else 500),
+                alignment_station_interval=(200 if h <= 1000 else 1000 if h <= 5000 else 5000),
+                auto_datum=datum_var.get(),
+                horizontal_alignment_dxf=plan_path or None,
+                custom_preset_path=custom_preset_var.get() or None), profile_var.get(), plan_var.get(), split_length)
             win.destroy()
         ttk.Button(buttons, text='확인', command=accept, width=10).pack(side='left', padx=(0, 7))
         ttk.Button(buttons, text='취소', command=win.destroy, width=10).pack(side='left')
@@ -752,36 +822,70 @@ class AlignmentGUI:
             self.export_button.configure(state='normal')
             messagebox.showerror('거더 출력 설정 오류', str(exc))
             return
+
         def work():
             successes, failures = [], []
+
             if export_profile:
                 try:
+                    # S3-D5.1: GUI에서 선택한 모드/축척에 맞는 프리셋 로드
+                    profile_options = options_with_preset(drawing_options)
+
+                    print("[S3-D5.1] mode:", profile_options.drawing_mode)
+                    print("[S3-D5.1] H:", profile_options.horizontal_scale)
+                    print("[S3-D5.1] V:", profile_options.vertical_scale)
+                    print("[S3-D5.1] preset:", profile_options.layout_preset)
+
+                    if profile_options.layout_preset:
+                        active_preset = profile_options.layout_preset
+                        print("[S3-D6] schema_version:", active_preset["schema_version"])
+                        print("[S3-D6] preset_file:",
+                              drawing_options.custom_preset_path or
+                              f"{active_preset['mode']}/h{int(active_preset['horizontal_scale'])}_v{int(active_preset['vertical_scale'])}.json")
+                        if active_preset["schema_version"] == 1:
+                            print("[S3-D5.1] expansion:",
+                                  active_preset["layout"].get("expansion"))
+
                     if split_length is None:
-                        result = create_profile_drawing(source, folder / 'final_result.dxf', drawing_options,
-                                                        vertical_curve_lengths=vc_lengths_by_index,
-                                                        structures=structures, girder_settings=girder_settings, pier_settings=pier_settings, bridge_layer_colors=bridge_layer_colors, label_settings=label_settings, tunnel_settings=tunnel_settings)
-                        successes.append(('종평면도', str(result['output']), len(vips)))
+                        result = create_profile_drawing(
+                            source,
+                            folder / "final_result.dxf",
+                            profile_options,
+                            vertical_curve_lengths=vc_lengths_by_index,
+                            structures=structures,
+                            girder_settings=girder_settings,
+                            pier_settings=pier_settings,
+                            bridge_layer_colors=bridge_layer_colors,
+                            label_settings=label_settings,
+                            tunnel_settings=tunnel_settings
+                        )
+                        successes.append(
+                            ("종평면도", str(result["output"]), len(vips))
+                        )
+
                     else:
                         from profile_split import export_split_profiles
-                        results = export_split_profiles(source, folder, split_length, drawing_options, vc_lengths_by_index,
-                                                        structures, girder_settings, pier_settings, bridge_layer_colors, label_settings, tunnel_settings)
-                        successes.append((f'종평면도 {len(results)}장 분할', str(folder), len(vips)))
+
+                        results = export_split_profiles(
+                            source,
+                            folder,
+                            split_length,
+                            profile_options,
+                            vc_lengths_by_index,
+                            structures,
+                            girder_settings,
+                            pier_settings,
+                            bridge_layer_colors,
+                            label_settings,
+                            tunnel_settings
+                        )
+                        successes.append(
+                            (f"종평면도 {len(results)}장 분할", str(folder), len(vips))
+                        )
+
                 except Exception as exc:
-                    failures.append(('종평면도', str(exc)))
-            if export_plan:
-                try:
-                    placed = create_final_plan(plan_source, source, folder / 'final_plan_result.dxf',
-                                               vips=vips, structures=structures,
-                                               bridge_nominal_span=plan_bridge_span,
-                                               bridge_plan_section=plan_bridge_section,
-                                               bridge_plan_pier_settings=plan_bridge_pier,
-                                               bridge_abutment_plan_dxf=plan_bridge_abutment,
-                                               tunnel_plan_settings=tunnel_settings,
-                                               plan_label_settings=plan_label_settings,
-                                               label_settings=label_settings)
-                    successes.append(('최종 평면도', str(folder / 'final_plan_result.dxf'), len(placed)))
-                except Exception as exc:
-                    failures.append(('최종 평면도', str(exc)))
+                    failures.append(("종평면도", str(exc)))
+
             self.events.put((generation, 'export_summary', (successes, failures)))
         threading.Thread(target=work, daemon=True).start()
 

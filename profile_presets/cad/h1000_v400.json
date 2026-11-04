@@ -1,0 +1,210 @@
+{
+  "schema_version": 2,
+  "name": "CAD H1000/V400 detailed",
+  "mode": "cad",
+  "horizontal_scale": 1000,
+  "vertical_scale": 400,
+  "standard_type": "detailed",
+  "status": "RELEASE",
+  "layout": {
+    "sheet": {
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "margin": {
+        "start": 10,
+        "end": 10
+      },
+      "drawing_limits": {
+        "plot_lower_y": 150,
+        "plot_upper_y": 250
+      }
+    },
+    "band": {
+      "column": {
+        "label_width": 40
+      },
+      "height": {
+        "alignment": 20,
+        "ground": 20,
+        "design": 20,
+        "fill": 15,
+        "cut": 15
+      },
+      "text": {
+        "data_height": 2.4,
+        "label_height": 5
+      },
+      "alignment": {
+        "diagram": {
+          "baseline_offset": 10.0,
+          "curve_offset": 6.0
+        },
+        "text": {
+          "station_height": 2.4,
+          "station_top_inset": 3.0,
+          "station_rotation": 0,
+          "curve_info_height": 1.8,
+          "curve_info_left_y": 8.5,
+          "curve_info_right_y": 7.7,
+          "curve_info_line_spacing": 2.6,
+          "element_station_height": 2.4,
+          "element_station_offset": 3.0,
+          "element_station_x_offset": 1.5,
+          "element_station": {
+            "placement": {
+              "SP": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "PC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "CP": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "PS": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "BC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "EC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              }
+            },
+            "y_offset": {
+              "LEFT": 3.0,
+              "RIGHT": -3.0
+            }
+          }
+        }
+      }
+    },
+    "profile": {
+      "plot": {
+        "height": 100
+      },
+      "datum": {
+        "step_m": 10,
+        "safety_margin_m": 5,
+        "text_height": 2.4
+      },
+      "clearance": {
+        "band_to_profile_gap": 30.0,
+        "reserved_structure_depth": 0.0,
+        "structure_clearance": 10.0,
+        "use_placement_clearance": false
+      }
+    },
+    "stations": {
+      "grid": {
+        "sub_interval": 20,
+        "main_interval": 200
+      },
+      "text": {
+        "band_interval": 20,
+        "alignment_station_interval": 200
+      }
+    },
+    "symbols": {
+      "vip": {
+        "circle_radius": 8
+      },
+      "datum": {
+        "break_width": 2.5,
+        "break_height": 7
+      }
+    },
+    "annotations": {
+      "datum": {
+        "label_dx": 11,
+        "label_dy": 12,
+        "break_kink_dy": 3
+      },
+      "vip": {
+        "text_height": 2.0,
+        "elevation_text_height": 2.4,
+        "caption_text_height": 2.4,
+        "caption_gap_factor": 0.6,
+        "distance_text_offset": 2,
+        "distance_text_height": 2.4,
+        "arrow_half_height": 0.75,
+        "arrow_length": 1.25,
+        "rule": {
+          "distance_offset": 20,
+          "grade_offset": 40
+        }
+      },
+      "vertical_curve": {
+        "ordinate_offset": 20,
+        "endpoint_text_offset": 10,
+        "endpoint_line_height": 26,
+        "text_height": 2.4
+      },
+      "grade": {
+        "text_height": 10
+      },
+      "distance": {
+        "text_height": 5
+      },
+      "row": {
+        "height": 6
+      },
+      "structure_label": {
+        "text": {
+          "height": 3.0,
+          "color": 1,
+          "rotation": 30.0,
+          "title_offset_factor": 0.55,
+          "station_offset_factor": -1.2,
+          "title": {
+            "x_offset": -0.825,
+            "y_offset": 1.4289419162
+          },
+          "station": {
+            "x_offset": 1.8,
+            "y_offset": -3.1176914536
+          }
+        },
+        "leader": {
+          "vertical_height": 30.0,
+          "angle": 30.0,
+          "margin": 3.0
+        }
+      }
+    }
+  },
+  "visibility": {
+    "minor_station_labels": true,
+    "vertical_curve_details": true,
+    "pier_details": true,
+    "datum_labels": true,
+    "alignment_band": true,
+    "ground_profile": true,
+    "design_profile": true
+  },
+  "visibility_policy": {
+    "enabled": false,
+    "minor_grid": true,
+    "vertical_curve_annotations": true,
+    "vip_annotations": true,
+    "datum_labels": true,
+    "alignment_geometry": true,
+    "ground_profile": true,
+    "design_profile": true,
+    "bridge_piers": true,
+    "bridge_abutments": true,
+    "bridge_girders": true,
+    "structure_labels": true,
+    "tunnel_portals": true,
+    "tunnel_bodies": true
+  },
+  "notes": "S3-D8.3 schema v2 migration from CAD H1000/V400 v1 baseline. Original scale-specific values preserved; previously implicit annotation/alignment/structure defaults made explicit. GUI/DXF regression validation pending; status provisional."
+}

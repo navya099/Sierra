@@ -5,7 +5,7 @@ Source DXF is strictly read-only. No sheet scaling or sheet splitting here.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import math
 import os
@@ -16,12 +16,15 @@ from ezdxf.enums import TextEntityAlignment
 from dxf_reader import extract_profile
 from profile_calculator import PiecewiseLinear, read_ground_points, calculate_stations
 from profile_layout import ProfileLayout
+from profile_presets.loader import load_preset, load_preset_file, validate_preset
+from profile_presets.runtime import to_drawing_preset
+from profile_transform import ProfileTransform, DrawingMode
 from profile_datum import DatumConfig, DatumSegment, plan_datum_segments
 from alignment_band import draw_alignment_band
 from bridge_girder import GirderSettings, draw_bridge_girders
 from bridge_abutment import draw_profile_abutments
 from bridge_pier import PierSettings, draw_profile_piers
-from structure_label import LabelSettings, draw_structure_labels
+from structure_label import LabelSettings, ProfileLabelStyle, draw_structure_labels
 from tunnel_profile import TunnelSettings, draw_tunnel_bodies
 from tunnel_portal import draw_profile_portals
 from tunnel_portal_custom import draw_custom_profile_portals
@@ -46,6 +49,8 @@ class DrawingOptions:
     vip_elevation_decimals: int = 2
     vertical_scale: float = 400.0  # 1:V, reference horizontal scale 1:1000
     horizontal_scale: float = 1000.0
+    drawing_mode: DrawingMode = DrawingMode.REPORT  # legacy output remains default
+    vertical_exaggeration_enabled: bool = True
     origin_x: float = 0.0
     origin_y: float = 0.0
     start_margin: float = 10.0  # output drawing units (mm)
@@ -59,6 +64,8 @@ class DrawingOptions:
     datum_safety_margin_m: float = 5.0
     sheet_start_sta: float | None = None
     sheet_end_sta: float | None = None
+    layout_preset: dict | None = None  # S3-D2: explicit opt-in; legacy output unchanged
+    custom_preset_path: str | None = None  # S3-D9: explicit user JSON file
 
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
@@ -108,6 +115,124 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            tunnel_settings: TunnelSettings | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
+    preset = options.layout_preset
+    alignment_settings = None
+    structure_label_style = None
+    if preset is not None:
+        validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
+                        expected_scales=(options.horizontal_scale, options.vertical_scale))
+        # S3-D6: one validated translation boundary for nested v2 presets.
+        # All existing drawing code receives its established internal contract.
+        preset = to_drawing_preset(preset)
+        alignment_settings = preset.get('_s3d7_alignment')
+        structure_label_style = ProfileLabelStyle.from_preset(preset.get('_s3d8_structure_label'))
+        p = preset['layout']
+        options = replace(options,
+            origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
+            start_margin=p['sheet']['start_margin'], end_margin=p['sheet']['end_margin'],
+            plot_lower_y=p['profile']['plot_lower_y'], plot_upper_y=p['profile']['plot_upper_y'],
+            datum_step_m=p['profile']['datum_step_m'],
+            datum_safety_margin_m=p['profile']['datum_safety_margin_m'],
+            vip_circle_radius=p['symbols']['vip_circle_radius'],
+            annotation_row_height=p['text']['annotation_row_height'],
+            station_interval=p['stations']['station_interval'],
+            major_interval=p['stations']['major_interval'],
+            band_interval=p['stations']['band_interval'],
+            alignment_station_interval=p['stations']['alignment_station_interval'])
+
+    # S3-D5.2: explicit absolute dimensions take precedence over legacy factors.
+    # No scaling of engineering geometry or S3-C coordinate transforms.
+    absolute = preset['layout'].get('absolute_dimensions') if preset else None
+    if absolute and absolute['enabled']:
+        from copy import deepcopy
+        preset = deepcopy(preset)
+        layout_cfg = preset['layout']
+        for group in ('sheet', 'band', 'text'):
+            layout_cfg[group].update(absolute[group])
+        options = replace(options, annotation_row_height=layout_cfg['text']['annotation_row_height'])
+        graph = absolute['profile']
+        band_top = sum(layout_cfg['band'][k] for k in
+                       ('alignment_height', 'ground_height', 'design_height', 'fill_height', 'cut_height'))
+        lower = graph['plot_lower_y']
+        if graph['use_placement_clearance']:
+            lower = max(lower, band_top + graph['band_to_profile_gap']
+                        + graph['reserved_structure_depth'] + graph['structure_clearance'])
+        options = replace(options, plot_lower_y=lower,
+                          plot_upper_y=lower + graph['plot_height'])
+        layout_cfg['placement']['enabled'] = False
+        layout_cfg['expansion']['enabled'] = False
+
+    # S3-D5.3: annotation-only absolute dimensions, opt-in and isolated.
+    # These are drawing-space offsets/heights, never station/elevation transforms.
+    annotation_defaults = {
+        'datum_label_dx': 11.0, 'datum_label_dy': 12.0,
+        'datum_break_kink_dy': 3.0,
+        'alignment_station_top_inset': 3.0,
+        'vip_elevation_text_height': 2.4,
+        'vip_caption_text_height': 2.4,
+        'vip_caption_gap_factor': 0.6,
+        'curve_ordinate_offset': 20.0,
+        'curve_endpoint_text_offset': 10.0,
+        'curve_endpoint_line_height': 26.0,
+        'curve_text_height': 2.4,
+        'vip_distance_text_offset': 2.0,
+        'vip_distance_text_height': 2.4,
+        'vip_arrow_half_height': 0.75,
+        'vip_arrow_length': 1.25,
+        'grade_text_height': 10.0,
+        'distance_text_height': 5.0,
+    }
+    annotation_cfg = (preset or {}).get('layout', {}).get('annotations', {})
+    annotation_dims = dict(annotation_defaults)
+    if annotation_cfg.get('enabled', False):
+        annotation_dims.update({k: v for k, v in annotation_cfg.items() if k != 'enabled'})
+
+    # S3-D5: optional whole-layout expansion. Values are drawing-space dimensions,
+    # independent of engineering station/elevation coordinate transforms.
+    expansion = preset['layout'].get('expansion') if preset else None
+    if expansion and expansion['enabled']:
+        from copy import deepcopy
+        preset = deepcopy(preset)  # never mutate the caller's preset
+        layout_cfg = preset['layout']
+        band_cfg = layout_cfg['band']
+        text_cfg = layout_cfg['text']
+        band_factor = expansion['band_height_factor']
+        for key in ('alignment_height', 'ground_height', 'design_height',
+                    'fill_height', 'cut_height', 'distance_rule_offset', 'grade_rule_offset'):
+            band_cfg[key] *= band_factor
+        layout_cfg['sheet']['label_column_width'] = expansion['label_column_width']
+        for key in ('data_text_height', 'label_text_height', 'datum_text_height',
+                    'vip_text_height', 'annotation_row_height'):
+            text_cfg[key] *= expansion['text_height_factor']
+        options = replace(options, annotation_row_height=text_cfg['annotation_row_height'])
+        # Expansion drives graph height and upper limit together; it never scales
+        # the actual profile ordinates (those belong to ProfileTransform).
+        profile_cfg = layout_cfg['profile']
+        lower = profile_cfg['plot_lower_y']
+        if expansion['use_placement_clearance']:
+            placement_cfg = layout_cfg['placement']
+            band_top = sum(band_cfg[k] for k in ('alignment_height','ground_height',
+                                                  'design_height','fill_height','cut_height'))
+            lower = max(lower, band_top + placement_cfg['band_to_profile_gap']
+                        + placement_cfg['reserved_structure_depth']
+                        + placement_cfg['structure_clearance'])
+        options = replace(options, plot_lower_y=lower,
+                          plot_upper_y=lower + expansion['profile_plot_height'])
+        # S3-D3 placement must not apply a second time after S3-D5 expansion.
+        layout_cfg['placement']['enabled'] = False
+
+    # S3-D3: opt-in placement. Baseline presets keep exact historical coordinates.
+    placement = preset['layout'].get('placement') if preset else None
+    if placement and placement['enabled']:
+        band_top = sum(preset['layout']['band'][k] for k in
+                       ('alignment_height', 'ground_height', 'design_height', 'fill_height', 'cut_height'))
+        required_lower = (band_top + placement['band_to_profile_gap']
+                          + placement['reserved_structure_depth']
+                          + placement['structure_clearance'])
+        lower = max(options.plot_lower_y, required_lower)
+        upper = max(options.plot_upper_y, lower + placement['profile_plot_height'])
+        options = replace(options, plot_lower_y=lower, plot_upper_y=upper)
+
     source = Path(source_dxf).resolve()
     output = Path(output_dxf).resolve()
     if source == output:
@@ -165,14 +290,32 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     sheet_plan = sheet_vertices(plan_render_points, rendered_plan)
 
     # A datum change affects profile geometry only, never the band or stationing.
-    layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
+    # Effective Y units/m must drive the datum window, not the raw V denominator.
+    policy = ProfileTransform(horizontal_scale=options.horizontal_scale,
+                              vertical_scale=options.vertical_scale,
+                              mode=options.drawing_mode,
+                              vertical_exaggeration_enabled=options.vertical_exaggeration_enabled)
+    effective_vertical_scale = 1000.0 / policy.y_units_per_metre
+    if preset is None:
+        layout = ProfileLayout(origin_x=options.origin_x, origin_y=options.origin_y)
+    else:
+        sheet, band, txt = (preset['layout'][k] for k in ('sheet', 'band', 'text'))
+        layout = ProfileLayout(
+            origin_x=options.origin_x, origin_y=options.origin_y,
+            label_column_width=sheet['label_column_width'],
+            alignment_height=band['alignment_height'], ground_height=band['ground_height'],
+            design_height=band['design_height'], fill_height=band['fill_height'],
+            cut_height=band['cut_height'],
+            distance_rule_offset=band['distance_rule_offset'],
+            grade_rule_offset=band['grade_rule_offset'],
+            data_text_height=txt['data_text_height'], label_text_height=txt['label_text_height'])
     graph_base_y = layout.origin_y + options.plot_lower_y
     if options.auto_datum and options.graph_bottom is not None:
         raise ValueError('자동 표고 기준과 수동 graph_bottom을 동시에 사용할 수 없습니다.')
     if options.auto_datum:
         datum_config = DatumConfig(
             horizontal_scale=options.horizontal_scale,
-            vertical_scale=options.vertical_scale,
+            vertical_scale=effective_vertical_scale,
             plot_lower_y=options.plot_lower_y,
             plot_upper_y=options.plot_upper_y,
             datum_step_m=options.datum_step_m,
@@ -191,13 +334,22 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         datum_segments = [DatumSegment(start, end, graph_bottom)]
     graph_bottom = datum_segments[0].datum_el
 
+    transform = ProfileTransform(
+        horizontal_scale=options.horizontal_scale,
+        vertical_scale=options.vertical_scale,
+        origin_x=layout.origin_x, origin_y=layout.origin_y,
+        label_column_width=layout.label_column_width,
+        start_margin=options.start_margin, plot_lower_y=options.plot_lower_y,
+        mode=options.drawing_mode,
+        vertical_exaggeration_enabled=options.vertical_exaggeration_enabled,
+    )
+
     def display_el(el, datum_el):
-        return layout.elevation_y(el, datum_el, options.plot_lower_y,
-                                  options.vertical_scale)
+        return transform.elevation_y(el, datum_el)
 
     def display_sta(sta):
         # Start/end margins are geometric whitespace, NOT extra railway stationing.
-        return layout.station_x(sta, start, options.horizontal_scale) + options.start_margin
+        return transform.station_x(sta, start)
     graph_bottom_y = graph_base_y
     data_left = layout.data_left_x  # left band/grade-rule boundary
     data_right = display_sta(end) + options.end_margin  # right boundary
@@ -208,9 +360,9 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     distance_rule_y = layout.distance_rule_y
     top = layout.origin_y + layout.band_top
     bottom = layout.origin_y
-    factor = options.horizontal_scale / options.vertical_scale
+    factor = transform.vertical_exaggeration
     doc = ezdxf.new('R2010')
-    doc.header['$INSUNITS'] = 4  # millimetres: output paper-space geometry
+    doc.header['$INSUNITS'] = (6 if policy.mode is DrawingMode.CAD else 4)  # CAD metres; report mm
     doc.styles.new('KOREAN', dxfattribs={'font': 'malgun.ttf'})
     _layer(doc, 'GROUND_PROFILE', 8, 0)
     _layer(doc, 'PLAN_PROFILE', 1, 100)
@@ -316,21 +468,28 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             y1 = yhi
             # Vertical break line with small zig-zag at the middle.
             ym = (y0 + y1) / 2
-            points = [(x, y0), (x, ym-7), (x-2.5, ym-3),
-                      (x+2.5, ym+3), (x, ym+7), (x, y1)]
+            break_half_width = (preset['layout']['symbols']['datum_break_width'] if preset else 2.5)
+            break_half_height = (preset['layout']['symbols']['datum_break_height'] if preset else 7)
+            points = [(x, y0), (x, ym-break_half_height),
+                      (x-break_half_width, ym-annotation_dims['datum_break_kink_dy']),
+                      (x+break_half_width, ym+annotation_dims['datum_break_kink_dy']),
+                      (x, ym+break_half_height), (x, y1)]
             msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
-            _text(msp, f'EL {left.datum_el:.0f}', x-11, y0+12,
-                  2.4, 'DATUM_LABEL')
-            _text(msp, f'EL {right.datum_el:.0f}', x+11, y0+12,
-                  2.4, 'DATUM_LABEL')
+            _text(msp, f'EL {left.datum_el:.0f}', x-annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
+                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
+            _text(msp, f'EL {right.datum_el:.0f}', x+annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
+                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
-    rows = [('평면선형', 0, 20), ('지반고', 20, 40), ('계획고', 40, 60),
-            ('성토고', 60, 75), ('절토고', 75, 90)]
+    rows = [('평면선형', 0, layout.alignment_top),
+            ('지반고', layout.alignment_top, layout.ground_top),
+            ('계획고', layout.ground_top, layout.design_top),
+            ('성토고', layout.design_top, layout.fill_top),
+            ('절토고', layout.fill_top, layout.band_top)]
     if not options.include_alignment_placeholder:
         rows = rows[1:]
-    for y in (0, 20, 40, 60, 75, 90):
+    for y in (0, layout.alignment_top, layout.ground_top, layout.design_top, layout.fill_top, layout.band_top):
         _line(msp, label_left, layout.origin_y+y, data_right,
               layout.origin_y+y, 'PROFILE_BAND')
     for x in (label_left, data_left, data_right):
@@ -344,8 +503,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     for sta in band_stations:
         g = raw_ground.at(sta)[0]
         p = vc_alignment.evaluate(sta)[0] if vc_alignment else raw_plan.at(sta)[0]
-        vals = ((max(g-p, 0), 75, 90), (max(p-g, 0), 60, 75),
-                (g, 20, 40), (p, 40, 60))
+        vals = ((max(g-p, 0), layout.fill_top, layout.band_top),
+                (max(p-g, 0), layout.design_top, layout.fill_top),
+                (g, layout.alignment_top, layout.ground_top),
+                (p, layout.ground_top, layout.design_top))
         for idx, (value, low, high) in enumerate(vals):
             if idx < 2 and value <= 1e-7:
                 continue
@@ -354,6 +515,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                   layout.data_text_height, 'BAND_TEXT', rotation=90)
     # 준공도면 평면선형 밴드: 200m마다 수평 측점 숫자 표시.
     # Datum 구간과 무관한 원래 측점 좌표를 사용한다.
+    alignment_text_cfg = (alignment_settings or {}).get('text', {})
+    station_height = alignment_text_cfg.get('station_height', layout.data_text_height)
+    station_inset = alignment_text_cfg.get('station_top_inset', annotation_dims['alignment_station_top_inset'])
+    station_rotation = alignment_text_cfg.get('station_rotation', 0)
     alignment_stations = _multiples(start, end, options.alignment_station_interval)
     if options.include_alignment_placeholder:
         for sta in alignment_stations:
@@ -364,13 +529,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                              else str(station_m % 1000))
             # 평면선형 밴드 상단(Y=20)에서 3mm 아래.
             _text(msp, station_label, display_sta(sta),
-                  layout.origin_y + layout.alignment_top - 3.0,
-                  layout.data_text_height, 'BAND_TEXT')
+                  layout.origin_y + layout.alignment_top - station_inset,
+                  station_height, 'BAND_TEXT', rotation=station_rotation)
     alignment_info = {'curve_count': 0, 'curve_visible_count': 0, 'curve_source': None}
     if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
         alignment_info = draw_alignment_band(
             msp, options.horizontal_alignment_dxf, start, end,
-            display_sta, layout.origin_y, _text, _line)
+            display_sta, layout.origin_y, _text, _line,
+            alignment_settings=alignment_settings)
     # No internal vertical lines in the band: user-approved cleanup.
 
     circle_stations = sorted(p.sta for p in vip
@@ -400,18 +566,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         if point.kind.startswith('VIP') and start < point.sta < end:
             msp.add_circle((x, grade_rule_y), r, dxfattribs={'layer': 'VIP_MARKER'})
             _text(msp, f'{point.elevation:.{options.vip_elevation_decimals}f}',
-                  x, grade_rule_y, 2.4,
+                  x, grade_rule_y, annotation_dims['vip_elevation_text_height'],
                   'VIP_MARKER', rotation=90)
-            _text(msp, 'VC', x, grade_rule_y+r+options.text_height*.6,
-                  2.4, 'VIP_MARKER')
+            _text(msp, 'VC', x, grade_rule_y+r+options.text_height*annotation_dims['vip_caption_gap_factor'],
+                  annotation_dims['vip_caption_text_height'], 'VIP_MARKER')
 
     # v12.3.3: vertical-curve ordinate labels at regular station grids.
     # Ordinate = actual parabola minus the nearest VIP tangent (signed metres).
     # Keep all additions inside the existing annotation strip (band top .. distance rule).
     if vc_alignment:
         grid_step = options.station_interval
-        ordinate_y = grade_rule_y + 20.0  # fixed +20 offset above VIP_DISTNACE_LINE
-        endpoint_y = grade_rule_y + 10.0  # fixed +10 offset above VIP_DISTNACE_LINE
+        ordinate_y = grade_rule_y + annotation_dims['curve_ordinate_offset']  # fixed +20 offset above VIP_DISTNACE_LINE
+        endpoint_y = grade_rule_y + annotation_dims['curve_endpoint_text_offset']  # fixed +10 offset above VIP_DISTNACE_LINE
         for curve in vc_alignment.curves:
             pvc, pvt = curve.pvc_sta, curve.pvt_sta
             if pvt < start or pvc > end:
@@ -419,7 +585,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             for endpoint in (pvc, pvt):
                 if start <= endpoint <= end:
                     x = display_sta(endpoint)
-                    _line(msp, x, grade_rule_y, x, grade_rule_y + 26.0,
+                    _line(msp, x, grade_rule_y, x, grade_rule_y + annotation_dims['curve_endpoint_line_height'],
                           'VERTICAL_CURVE_ORDINATE_LINE')
                     # Distance to the adjacent grid *inside* the curve.
                     neighbor = (math.ceil((endpoint - 1e-8) / grid_step) * grid_step
@@ -432,7 +598,7 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                     gap = abs(neighbor - endpoint)
                     if gap > 1e-7 and gap <= grid_step + 1e-7 and start <= neighbor <= end:
                         midpoint = (display_sta(endpoint) + display_sta(neighbor)) / 2
-                        _text(msp, f'{gap:.2f}', midpoint, endpoint_y, 2.4,
+                        _text(msp, f'{gap:.2f}', midpoint, endpoint_y, annotation_dims['curve_text_height'],
                               'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT')
             # All grid stations strictly inside the vertical curve.
             for sta in _multiples(max(start, pvc), min(end, pvt), grid_step):
@@ -440,13 +606,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                     continue
                 ordinate = curve.ordinate(sta)
                 _text(msp, f'{ordinate:.2f}', display_sta(sta), ordinate_y,
-                      2.4, 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
+                      annotation_dims['curve_text_height'], 'VERTICAL_CURVE_ORDINATE_TEXT', rotation=90)
 
     # v12.3.9: show distances from each interior VIP to adjacent station grids.
     # Draw in the lower annotation strip, independent of ordinate annotations.
     vip_distance_y = (distance_rule_y + layout.origin_y + layout.band_top) / 2.0
-    arrow_half_height = 0.75
-    arrow_length = 1.25
+    arrow_half_height = annotation_dims['vip_arrow_half_height']
+    arrow_length = annotation_dims['vip_arrow_length']
     for vip_sta in circle_stations:
         left_grid = math.floor((vip_sta + 1e-8) / options.station_interval) * options.station_interval
         right_grid = math.ceil((vip_sta - 1e-8) / options.station_interval) * options.station_interval
@@ -463,8 +629,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 arrow_len = max(0.2, (right_x-left_x)*0.25)
             else:
                 arrow_len = arrow_length
-            _text(msp, f'{gap:.2f}', (left_x + right_x)/2.0, vip_distance_y + 2.0,
-                  2.4, 'VIP_TO_GRID_DISTANCE_TEXT')
+            _text(msp, f'{gap:.2f}', (left_x + right_x)/2.0, vip_distance_y + annotation_dims['vip_distance_text_offset'],
+                  annotation_dims['vip_distance_text_height'], 'VIP_TO_GRID_DISTANCE_TEXT')
             # v12.3.10: horizontal dimension line joining both arrow tips.
             # Keep the approved Y position, arrowheads and text unchanged.
             msp.add_line((left_x, vip_distance_y), (right_x, vip_distance_y),
@@ -488,10 +654,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         midpoint = display_sta((left_sta + right_sta)/2)
         _text(msp, _fmt_grade(a.gradient_out, options.grade_decimals),
               midpoint, grade_rule_y + ar*.45,
-              10.0, 'VIP_ANNOTATION')
+              annotation_dims['grade_text_height'], 'VIP_ANNOTATION')
         _text(msp, _fmt_distance(b.sta-a.sta),
               midpoint, distance_rule_y + ar*.45,
-              5.0, 'VIP_ANNOTATION')
+              annotation_dims['distance_text_height'], 'VIP_ANNOTATION')
 
     tunnel_count = 0
     portal_count = 0
@@ -542,7 +708,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     if structures:
         elevation_at = (lambda s: vc_alignment.evaluate(s)[0]) if vc_alignment else (lambda s: raw_plan.at(s)[0])
         label_count=draw_structure_labels(msp,structures,label_settings or LabelSettings(),start,end,
-                                          datum_segments,elevation_at,display_sta,display_el)
+                                          datum_segments,elevation_at,display_sta,display_el,
+                                          style=structure_label_style)
 
     # Layer-level ACI colors keep all bridge entities BYLAYER, including
     # objects generated by the legacy girder/abutment/pier modules.
@@ -555,6 +722,34 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             _layer(doc,layer_name,color,25)
         else:
             doc.layers.get(layer_name).dxf.color=color
+
+    # S3-D4: opt-in, per-preset entity visibility. No effect on S3-D3 baseline.
+    visibility_policy = (preset or {}).get('visibility_policy', {})
+    if visibility_policy.get('enabled', False):
+        layer_groups = {
+            'minor_grid': ('GRID_MINOR',),
+            'vertical_curve_annotations': (
+                'VERTICAL_CURVE_ORDINATE_TEXT', 'VERTICAL_CURVE_ORDINATE_LINE',
+                'DISTANCE_PVC_OR_PVT_TO_GRID_TEXT', 'VIP_TO_GRID_DISTANCE_TEXT',
+                'VIP_TO_GRID_DISTANCE_ARROW'),
+            'vip_annotations': ('VIP_ANNOTATION', 'VIP_MARKER', 'VIP_DISTNACE_LINE'),
+            'datum_labels': ('DATUM_LABEL',),
+            'alignment_geometry': ('ALIGNMENT_CURVE', 'ALIGNMENT_STRAIGHT',
+                                   'ALIGNMENT_IP_TEXT', 'ALIGNMENT_ELEMENT_TEXT'),
+            'ground_profile': ('GROUND_PROFILE',),
+            'design_profile': ('PLAN_PROFILE',),
+            'bridge_piers': ('BRIDGE_PIER',),
+            'bridge_abutments': ('BRIDGE_ABUTMENT',),
+            'bridge_girders': ('BRIDGE_GIRDER',),
+            'structure_labels': ('STRUCTURE_LABEL',),
+            'tunnel_portals': ('TUNNEL_PORTAL',),
+            'tunnel_bodies': ('TUNNEL_BODY', 'TUNNEL_INNER'),
+        }
+        hidden_layers = {layer for key, layers in layer_groups.items()
+                         if not visibility_policy[key] for layer in layers}
+        for entity in list(msp):
+            if entity.dxf.layer in hidden_layers:
+                msp.delete_entity(entity)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     # Write to a temporary file, then replace. Never write to the input file.
@@ -578,7 +773,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         'grade_rule_y': grade_rule_y, 'distance_rule_y': distance_rule_y,
         'vip_circle_count': len(circle_stations),
         'vertical_scale': options.vertical_scale, 'vertical_exaggeration': factor,
+        'drawing_mode': policy.mode.value, 'vertical_exaggeration_enabled': options.vertical_exaggeration_enabled,
         'plot_lower_y': ylo, 'plot_upper_y': yhi,
+        'layout_placement_enabled': bool(placement and placement['enabled']),
+        'layout_reserved_structure_depth': placement['reserved_structure_depth'] if placement else 0.0,
         'datum_segment_count': len(datum_segments),
         **alignment_info,
         'datum_break_count': len(datum_segments)-1,
@@ -622,3 +820,15 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+def options_with_preset(options: DrawingOptions) -> DrawingOptions:
+    """Load exact mode/H/V preset; no silent fallback or alteration of options."""
+    from profile_transform import DrawingMode
+    mode = options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode
+    if options.custom_preset_path:
+        preset = load_preset_file(options.custom_preset_path, expected_mode=mode,
+                                  expected_scales=(options.horizontal_scale, options.vertical_scale))
+    else:
+        preset = load_preset(mode, options.horizontal_scale, options.vertical_scale)
+    return replace(options, layout_preset=preset)
