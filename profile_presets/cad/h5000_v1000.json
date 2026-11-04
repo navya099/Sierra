@@ -70,6 +70,10 @@
                 "align": "LEFT",
                 "x_offset": 0
               }
+            },
+            "y_offset": {
+              "LEFT": 0,
+              "RIGHT": -20
             }
           }
         }

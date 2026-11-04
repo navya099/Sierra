@@ -115,7 +115,13 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
             is_right = ip['direction'] == 'RIGHT'
             # 3 mm toward the band interior from the actual curve diagram at this station.
             diagram_y = ybase + offset_at(sta)
-            label_y = diagram_y + (-cfg.get('element_station_offset', 3.0) if is_right else cfg.get('element_station_offset', 3.0))
+            # Direction-specific Y offsets override the legacy signed spacing.
+            y_offsets = cfg.get('element_station', {}).get('y_offset')
+            if y_offsets is None:
+                y_offset = -cfg.get('element_station_offset', 3.0) if is_right else cfg.get('element_station_offset', 3.0)
+            else:
+                y_offset = y_offsets[ip['direction']]
+            label_y = diagram_y + y_offset
             km = int(sta // 1000)
             metres = sta - km * 1000
             station_text = f'{name}={km}km{metres:06.2f}'

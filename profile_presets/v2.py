@@ -38,7 +38,13 @@ def validate_layout_v2(layout):
         _object(band['alignment']['text'], text_fields, 'layout.band.alignment.text')
         if 'element_station' in band['alignment']['text']:
             element = band['alignment']['text']['element_station']
-            _object(element, ('placement',), 'layout.band.alignment.text.element_station')
+            _object(element, ('placement', 'y_offset') if 'y_offset' in element else ('placement',), 'layout.band.alignment.text.element_station')
+            if 'y_offset' in element:
+                offsets = element['y_offset']
+                _object(offsets, ('LEFT', 'RIGHT'), 'layout.band.alignment.text.element_station.y_offset')
+                for direction, value in offsets.items():
+                    if type(value) not in (int, float) or not math.isfinite(value):
+                        raise ValueError('element_station.y_offset.' + direction + ': finite number required')
             placements = element['placement']
             if not isinstance(placements, dict) or not set(placements) <= {'SP','PC','CP','PS','BC','EC'}:
                 raise ValueError('element_station.placement: invalid element names')
