@@ -152,8 +152,8 @@ def _validate_visibility_and_status(data, visibility):
         for key in keys:
             if type(policy[key]) is not bool:
                 raise ValueError(f'visibility_policy.{key}: boolean required')
-    if data.get('status') not in ('baseline', 'provisional'):
-        raise ValueError('status must be baseline or provisional')
+    if data.get('status') not in ('baseline', 'provisional', 'RELEASE'):
+        raise ValueError('status must be baseline, provisional or RELEASE')
     return True
 
 def load_preset(mode, horizontal_scale, vertical_scale, *, root=None):

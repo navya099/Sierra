@@ -1,96 +1,183 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CAD H1000/V400 detailed",
   "mode": "cad",
   "horizontal_scale": 1000,
   "vertical_scale": 400,
   "standard_type": "detailed",
-  "status": "baseline",
+  "status": "RELEASE",
   "layout": {
     "sheet": {
-      "origin_x": 0,
-      "origin_y": 0,
-      "label_column_width": 40,
-      "start_margin": 10,
-      "end_margin": 10
-    },
-    "profile": {
-      "plot_lower_y": 150,
-      "plot_upper_y": 250,
-      "datum_step_m": 10,
-      "datum_safety_margin_m": 5
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "margin": {
+        "start": 10,
+        "end": 10
+      },
+      "drawing_limits": {
+        "plot_lower_y": 150,
+        "plot_upper_y": 250
+      }
     },
     "band": {
-      "alignment_height": 20,
-      "ground_height": 20,
-      "design_height": 20,
-      "fill_height": 15,
-      "cut_height": 15,
-      "distance_rule_offset": 20,
-      "grade_rule_offset": 40
-    },
-    "text": {
-      "data_text_height": 2.4,
-      "label_text_height": 5,
-      "datum_text_height": 2.4,
-      "vip_text_height": 2.0,
-      "annotation_row_height": 6
-    },
-    "symbols": {
-      "vip_circle_radius": 8,
-      "datum_break_width": 2.5,
-      "datum_break_height": 7
-    },
-    "stations": {
-      "station_interval": 20,
-      "major_interval": 200,
-      "band_interval": 20,
-      "alignment_station_interval": 200
-    },
-    "placement": {
-      "enabled": false,
-      "band_to_profile_gap": 30.0,
-      "reserved_structure_depth": 0.0,
-      "structure_clearance": 10.0,
-      "profile_plot_height": 100.0,
-      "datum_label_offset": 12.0
-    },
-    "expansion": {
-      "enabled": false,
-      "band_height_factor": 1.0,
-      "label_column_width": 40.0,
-      "text_height_factor": 1.0,
-      "profile_plot_height": 100.0,
-      "use_placement_clearance": true
-    },
-    "absolute_dimensions": {
-      "enabled": false,
-      "sheet": {
-        "label_column_width": 40
+      "column": {
+        "label_width": 40
       },
-      "band": {
-        "alignment_height": 20,
-        "ground_height": 20,
-        "design_height": 20,
-        "fill_height": 15,
-        "cut_height": 15,
-        "distance_rule_offset": 20,
-        "grade_rule_offset": 40
+      "height": {
+        "alignment": 20,
+        "ground": 20,
+        "design": 20,
+        "fill": 15,
+        "cut": 15
       },
       "text": {
-        "data_text_height": 2.4,
-        "label_text_height": 5,
-        "datum_text_height": 2.4,
-        "vip_text_height": 2.0,
-        "annotation_row_height": 6
+        "data_height": 2.4,
+        "label_height": 5
       },
-      "profile": {
-        "plot_lower_y": 150.0,
-        "plot_height": 100.0,
+      "alignment": {
+        "diagram": {
+          "baseline_offset": 10.0,
+          "curve_offset": 6.0
+        },
+        "text": {
+          "station_height": 2.4,
+          "station_top_inset": 3.0,
+          "station_rotation": 0,
+          "curve_info_height": 1.8,
+          "curve_info_left_y": 8.5,
+          "curve_info_right_y": 7.7,
+          "curve_info_line_spacing": 2.6,
+          "element_station_height": 2.4,
+          "element_station_offset": 3.0,
+          "element_station_x_offset": 1.5,
+          "element_station": {
+            "placement": {
+              "SP": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "PC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "CP": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "PS": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "BC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              },
+              "EC": {
+                "align": "LEFT",
+                "x_offset": 1.5
+              }
+            },
+            "y_offset": {
+              "LEFT": 3.0,
+              "RIGHT": -3.0
+            }
+          }
+        }
+      }
+    },
+    "profile": {
+      "plot": {
+        "height": 100
+      },
+      "datum": {
+        "step_m": 10,
+        "safety_margin_m": 5,
+        "text_height": 2.4
+      },
+      "clearance": {
         "band_to_profile_gap": 30.0,
         "reserved_structure_depth": 0.0,
         "structure_clearance": 10.0,
         "use_placement_clearance": false
+      }
+    },
+    "stations": {
+      "grid": {
+        "sub_interval": 20,
+        "main_interval": 200
+      },
+      "text": {
+        "band_interval": 20,
+        "alignment_station_interval": 200
+      }
+    },
+    "symbols": {
+      "vip": {
+        "circle_radius": 8
+      },
+      "datum": {
+        "break_width": 2.5,
+        "break_height": 7
+      }
+    },
+    "annotations": {
+      "datum": {
+        "label_dx": 11,
+        "label_dy": 12,
+        "break_kink_dy": 3
+      },
+      "vip": {
+        "text_height": 2.0,
+        "elevation_text_height": 2.4,
+        "caption_text_height": 2.4,
+        "caption_gap_factor": 0.6,
+        "distance_text_offset": 2,
+        "distance_text_height": 2.4,
+        "arrow_half_height": 0.75,
+        "arrow_length": 1.25,
+        "rule": {
+          "distance_offset": 20,
+          "grade_offset": 40
+        }
+      },
+      "vertical_curve": {
+        "ordinate_offset": 20,
+        "endpoint_text_offset": 10,
+        "endpoint_line_height": 26,
+        "text_height": 2.4
+      },
+      "grade": {
+        "text_height": 10
+      },
+      "distance": {
+        "text_height": 5
+      },
+      "row": {
+        "height": 6
+      },
+      "structure_label": {
+        "text": {
+          "height": 3.0,
+          "color": 1,
+          "rotation": 30.0,
+          "title_offset_factor": 0.55,
+          "station_offset_factor": -1.2,
+          "title": {
+            "x_offset": -0.825,
+            "y_offset": 1.4289419162
+          },
+          "station": {
+            "x_offset": 1.8,
+            "y_offset": -3.1176914536
+          }
+        },
+        "leader": {
+          "vertical_height": 30.0,
+          "angle": 30.0,
+          "margin": 3.0
+        }
       }
     }
   },
@@ -103,7 +190,6 @@
     "ground_profile": true,
     "design_profile": true
   },
-  "notes": "S3-D5.2: absolute dimensions are editable per preset; H5000 CAD values are provisional. Legacy expansion disabled.",
   "visibility_policy": {
     "enabled": false,
     "minor_grid": true,
@@ -119,5 +205,6 @@
     "structure_labels": true,
     "tunnel_portals": true,
     "tunnel_bodies": true
-  }
+  },
+  "notes": "S3-D8.3 schema v2 migration from CAD H1000/V400 v1 baseline. Original scale-specific values preserved; previously implicit annotation/alignment/structure defaults made explicit. GUI/DXF regression validation pending; status provisional."
 }
