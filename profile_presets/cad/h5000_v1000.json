@@ -39,7 +39,7 @@
       "alignment": {
         "diagram": {
           "baseline_offset": 40.0,
-          "curve_offset": 30
+          "curve_offset": 20
         },
         "text": {
           "station_height": 15,
@@ -50,8 +50,28 @@
           "curve_info_right_y": 50,
           "curve_info_line_spacing": 20,
           "element_station_height": 15,
-          "element_station_offset": 12.5,
-          "element_station_x_offset": 0
+          "element_station_offset": 20,
+          "element_station_x_offset": 1.5,
+          "element_station": {
+            "placement": {
+              "SP": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "PC": {
+                "align": "LEFT",
+                "x_offset": 0
+              },
+              "CP": {
+                "align": "RIGHT",
+                "x_offset": 0
+              },
+              "PS": {
+                "align": "LEFT",
+                "x_offset": 0
+              }
+            }
+          }
         }
       }
     },

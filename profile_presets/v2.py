@@ -34,11 +34,27 @@ def validate_layout_v2(layout):
     if 'alignment' in band:
         _object(band['alignment'], ('diagram', 'text'), 'layout.band.alignment')
         _object(band['alignment']['diagram'], ('baseline_offset', 'curve_offset') if 'curve_offset' in band['alignment']['diagram'] else ('baseline_offset',), 'layout.band.alignment.diagram')
-        _object(band['alignment']['text'], ALIGNMENT_TEXT_FIELDS, 'layout.band.alignment.text')
+        text_fields = ALIGNMENT_TEXT_FIELDS + (('element_station',) if 'element_station' in band['alignment']['text'] else ())
+        _object(band['alignment']['text'], text_fields, 'layout.band.alignment.text')
+        if 'element_station' in band['alignment']['text']:
+            element = band['alignment']['text']['element_station']
+            _object(element, ('placement',), 'layout.band.alignment.text.element_station')
+            placements = element['placement']
+            if not isinstance(placements, dict) or not set(placements) <= {'SP','PC','CP','PS','BC','EC'}:
+                raise ValueError('element_station.placement: invalid element names')
+            for name, placement in placements.items():
+                _object(placement, ('align','x_offset'), 'element_station.placement.'+name)
+                if placement['align'] not in ('LEFT','CENTER','RIGHT'):
+                    raise ValueError('element_station.placement.'+name+'.align: invalid')
+                x = placement['x_offset']
+                if type(x) not in (int,float) or not math.isfinite(x):
+                    raise ValueError('element_station.placement.'+name+'.x_offset: finite number required')
         _num(band['alignment']['diagram']['baseline_offset'], 'layout.band.alignment.diagram.baseline_offset', allow_zero=True)
         if 'curve_offset' in band['alignment']['diagram']:
             _num(band['alignment']['diagram']['curve_offset'], 'layout.band.alignment.diagram.curve_offset', allow_zero=True)
         for key, value in band['alignment']['text'].items():
+            if key == 'element_station':
+                continue
             _num(value, 'layout.band.alignment.text.'+key, allow_zero=(key in
                  ('station_top_inset','station_rotation','curve_info_left_y',
                   'curve_info_right_y','element_station_offset','element_station_x_offset')))

@@ -121,11 +121,15 @@ def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line
             station_text = f'{name}={km}km{metres:06.2f}'
             # Left alignment avoids encroaching on the preceding interval.
             from ezdxf.enums import TextEntityAlignment
-            x_text = x + cfg.get('element_station_x_offset', 1.5)
+            # Per-element alignment and offset; absent entries use legacy LEFT placement.
+            placement = cfg.get('element_station', {}).get('placement', {}).get(name, {})
+            align_name = placement.get('align', 'LEFT')
+            x_offset = placement.get('x_offset', cfg.get('element_station_x_offset', 1.5))
+            x_text = x + x_offset
             entity = text(msp, station_text, x_text, label_y, cfg.get('element_station_height', 2.4),
                           'ALIGNMENT_ELEMENT_TEXT')
             entity.set_placement((x_text, label_y),
-                                 align=TextEntityAlignment.LEFT)
+                                 align=getattr(TextEntityAlignment, align_name))
             station_label_count += 1
     return {'curve_count':len(ips),'curve_visible_count':visible,'curve_source':str(source),
             'curve_station_range':(ips[0]['curve_start_sta_m'],ips[-1]['curve_end_sta_m']),
