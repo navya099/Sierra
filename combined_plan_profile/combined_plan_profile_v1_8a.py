@@ -4,7 +4,8 @@
 from pathlib import Path
 import argparse
 from dataclasses import replace
-from .profile_engine.profile_drawing import create_profile_drawing, DrawingOptions
+# R2-6: Use the unified S3-D9 profile engine.
+from profile_drawing import create_profile_drawing, DrawingOptions
 from .profile_engine.profile_calculator import read_ground_points
 from .profile_engine.dxf_reader import extract_profile
 from .combined_plan_profile_v1_7_core import generate, read_alignment
