@@ -3,7 +3,7 @@ import csv
 import json
 import math
 from pathlib import Path
-from .profile_engine.vertical_curve import VerticalAlignment
+from vertical_curve import VerticalAlignment
 
 
 def _positive_length(value, context):

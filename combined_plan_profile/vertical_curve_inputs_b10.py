@@ -2,7 +2,7 @@
 import csv
 import math
 from pathlib import Path
-from .profile_engine.vertical_curve import VerticalAlignment
+from vertical_curve import VerticalAlignment
 
 
 def load_vertical_curve_csv(path, vips):
