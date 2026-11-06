@@ -37,6 +37,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             'titleblock_config': tk.StringVar(),
             'structures_csv': tk.StringVar(),
             'structure_settings_json': tk.StringVar(),
+            'structure_label_preset': tk.StringVar(),
             'sheet_length': tk.StringVar(value='700'),
             'horizontal_scale': tk.StringVar(value='1000'),
             'vertical_scale': tk.StringVar(value='400'),
@@ -69,6 +70,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             ('titleblock_config', '도곽 설정 JSON (선택)', 'file', [('JSON', '*.json')]),
             ('structures_csv', '구조물 CSV (선택)', 'file', [('CSV', '*.csv')]),
             ('structure_settings_json', '구조물 설정 JSON (선택)', 'file', [('JSON', '*.json')]),
+            ('structure_label_preset', 'S3-D9 구조물 주석 프리셋 (비우면 축척별 내장)', 'file', [('JSON', '*.json')]),
         ]
         for r, (key, title, kind, types) in enumerate(rows):
             ttk.Label(inputs, text=title).grid(row=r, column=0, sticky='w', pady=3)
@@ -123,7 +125,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                 raise ValueError(f'{key}: 유효한 DXF 파일을 선택하세요.')
         if Path(values['plan']).resolve() == Path(values['profile']).resolve():
             raise ValueError('평면 DXF와 종단 DXF는 서로 다른 파일이어야 합니다.')
-        for key in ('template', 'titleblock_config', 'structures_csv', 'structure_settings_json'):
+        for key in ('template', 'titleblock_config', 'structures_csv', 'structure_settings_json', 'structure_label_preset'):
             if values[key] and not Path(values[key]).is_file():
                 raise ValueError(f'{key}: 선택한 파일이 없습니다.')
         if values['structure_settings_json'] and not values['structures_csv'] and not self.use_structures.get():
@@ -133,7 +135,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         folder = Path(values['output_dir']).resolve()
         if folder.exists() and not folder.is_dir():
             raise ValueError('출력 경로가 폴더가 아닙니다.')
-        for key in ('plan', 'profile', 'template', 'titleblock_config', 'structures_csv', 'structure_settings_json'):
+        for key in ('plan', 'profile', 'template', 'titleblock_config', 'structures_csv', 'structure_settings_json', 'structure_label_preset'):
             if values[key] and Path(values[key]).resolve().parent == folder:
                 # Input files in the output directory are allowed; output names are checked by engine.
                 pass
@@ -146,6 +148,11 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                 raise ValueError(f'{key}: 유한한 숫자여야 합니다.')
         if values['start_sta'] and values['end_sta'] and float(values['start_sta']) >= float(values['end_sta']):
             raise ValueError('종료 측점은 시작 측점보다 커야 합니다.')
+        # Validate before launching subprocess, using the same strict S3-D9 loader.
+        if values['structure_label_preset']:
+            from profile_presets.loader import load_preset_file
+            load_preset_file(values['structure_label_preset'], expected_mode='cad',
+                             expected_scales=(float(values['horizontal_scale']), float(values['vertical_scale'])))
         vc = {}
         if self.use_vc.get():
             if self.owner is None:
@@ -236,7 +243,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         cmd = [sys.executable, '-u', '-m', 'combined_plan_profile.combined_plan_profile_v1_8a']
         fields = [
             'plan', 'profile', 'output_dir', 'template', 'titleblock_config',
-            'structures_csv', 'structure_settings_json', 'sheet_length',
+            'structures_csv', 'structure_settings_json', 'structure_label_preset', 'sheet_length',
             'horizontal_scale', 'vertical_scale', 'station_origin', 'start_sta',
             'end_sta', 'project_name', 'route_name', 'left_direction', 'right_direction',
         ]

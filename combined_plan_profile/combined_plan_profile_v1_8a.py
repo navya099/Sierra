@@ -6,6 +6,9 @@ import argparse
 from dataclasses import replace
 # R2-6: Use the unified S3-D9 profile engine.
 from profile_drawing import create_profile_drawing, DrawingOptions
+from profile_presets.loader import load_preset, load_preset_file
+from profile_presets.runtime import to_drawing_preset
+from structure_label import ProfileLabelStyle
 from profile_calculator import read_ground_points
 from dxf_reader import extract_profile
 from .combined_plan_profile_v1_7_core import generate, read_alignment
@@ -74,10 +77,29 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
           project_name=None,route_name=None,titleblock_config_path=None,
           left_direction="서울쪽",right_direction="부산쪽",
           structures_csv=None,structure_settings_json=None,vertical_curve_csv=None,
-          vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None):
+          vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None,
+          structure_label_preset=None):
     titleblock_config=load_titleblock_config(titleblock_config_path)
     structures=load_structures(structures_csv) if structures_csv else None
     structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
+    # G1-2D-3: import ONLY the S3-D9 structure annotation style.
+    # Never replace combined-sheet origins, band heights, datum or plot limits.
+    if structures:
+        if structure_label_preset:
+            source_preset = load_preset_file(structure_label_preset, expected_mode='cad',
+                                             expected_scales=(horizontal_scale, vertical_scale))
+        else:
+            source_preset = load_preset('cad', horizontal_scale, vertical_scale)
+        drawing_preset = to_drawing_preset(source_preset)
+        style_config = drawing_preset.get('_s3d8_structure_label')
+        if style_config is None:
+            raise ValueError('선택한 프리셋에 구조물 주석 스타일이 없습니다.')
+        label_style = ProfileLabelStyle.from_preset(style_config)
+        label_style.validate()
+        structure_kwargs['structure_label_style'] = label_style
+        print(f'[G1-2D-3 프리셋] {source_preset["name"]} H{horizontal_scale:g}/V{vertical_scale:g}; '
+              f'문자={label_style.text_height:g}, 인출선={label_style.vertical_height:g}, '
+              f'각도={label_style.leader_angle:g}', flush=True)
     if structures is not None:
         print(f"[B.8 구조물] {len(structures)}개 로드 (교량 {sum(x.kind=='BRIDGE' for x in structures)}, 터널 {sum(x.kind=='TUNNEL' for x in structures)})",flush=True)
     t0=perf_counter()
@@ -167,6 +189,7 @@ if __name__=="__main__":
     p.add_argument("--vertical-curve-simple-csv",type=Path,help="간편 CSV: VIP_STA,L 또는 VIP,L")
     p.add_argument("--structures-csv",type=Path,help="기존 구조물 GUI에서 저장한 CSV (미지정 시 B.7 동작 유지)")
     p.add_argument("--structure-settings-json",type=Path,help="거더/교각/터널/주석 설정 JSON (선택)")
+    p.add_argument("--structure-label-preset",type=Path,help="S3-D9 CAD 프리셋 JSON (생략 시 축척별 내장 프리셋)")
     a=p.parse_args()
     started_at = datetime.now()
     started_tick = perf_counter()
@@ -177,7 +200,8 @@ if __name__=="__main__":
             a.project_name,a.route_name,a.titleblock_config,
             a.left_direction,a.right_direction,
             a.structures_csv,a.structure_settings_json,a.vertical_curve_csv,
-            a.vertical_curve_sta_json,a.vertical_curve_index_json,a.vertical_curve_simple_csv):
+            a.vertical_curve_sta_json,a.vertical_curve_index_json,a.vertical_curve_simple_csv,
+            a.structure_label_preset):
             print(item, flush=True)
     finally:
         finished_at = datetime.now()

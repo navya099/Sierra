@@ -127,12 +127,12 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            structures=None, girder_settings: GirderSettings | None = None,
                            pier_settings: PierSettings | None = None, bridge_layer_colors=None, label_settings: LabelSettings | None = None,
                            tunnel_settings: TunnelSettings | None = None,
-                           target_doc=None) -> dict:
+                           target_doc=None,
+                           structure_label_style: ProfileLabelStyle | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
     alignment_settings = None
-    structure_label_style = None
     if preset is not None:
         validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
                         expected_scales=(options.horizontal_scale, options.vertical_scale))
@@ -140,7 +140,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         # All existing drawing code receives its established internal contract.
         preset = to_drawing_preset(preset)
         alignment_settings = preset.get('_s3d7_alignment')
-        structure_label_style = ProfileLabelStyle.from_preset(preset.get('_s3d8_structure_label'))
+        if structure_label_style is None:
+            structure_label_style = ProfileLabelStyle.from_preset(preset.get('_s3d8_structure_label'))
         p = preset['layout']
         options = replace(options,
             origin_x=p['sheet']['origin_x'], origin_y=p['sheet']['origin_y'],
