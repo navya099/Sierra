@@ -185,9 +185,17 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             abutment_path = Path(editor.bridge_abutment_plan_path()).resolve()
             if not abutment_path.is_file():
                 raise ValueError(f'교대 평면 템플릿 DXF 파일이 없습니다: {abutment_path}')
+            # G1-2D-1: capture the validated bridge plan section and pier
+            # dimensions from the existing StructureEditor. asdict() converts
+            # the immutable section tuple data into JSON-compatible lists.
+            plan_section = editor.bridge_plan_section()
+            plan_section.validate()
+            plan_pier = editor.plan_pier_settings()
             settings = {
                 'plan': {
                     'bridge_abutment_plan_dxf': str(abutment_path),
+                    'bridge_section': asdict(plan_section),
+                    'pier': asdict(plan_pier),
                 },
                 'girder': asdict(girder),
                 'pier': asdict(pier),
