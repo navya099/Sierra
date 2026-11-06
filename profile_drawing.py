@@ -112,7 +112,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            vertical_curve_lengths: dict[int, float] | None = None,
                            structures=None, girder_settings: GirderSettings | None = None,
                            pier_settings: PierSettings | None = None, bridge_layer_colors=None, label_settings: LabelSettings | None = None,
-                           tunnel_settings: TunnelSettings | None = None) -> dict:
+                           tunnel_settings: TunnelSettings | None = None,
+                           target_doc=None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
@@ -361,9 +362,20 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     top = layout.origin_y + layout.band_top
     bottom = layout.origin_y
     factor = transform.vertical_exaggeration
-    doc = ezdxf.new('R2010')
-    doc.header['$INSUNITS'] = (6 if policy.mode is DrawingMode.CAD else 4)  # CAD metres; report mm
-    doc.styles.new('KOREAN', dxfattribs={'font': 'malgun.ttf'})
+
+    doc = target_doc if target_doc is not None else ezdxf.new('R2010')
+
+    if target_doc is None:
+        doc.header['$INSUNITS'] = (
+            6 if policy.mode is DrawingMode.CAD else 4
+        )
+
+    if 'KOREAN' not in doc.styles:
+        doc.styles.new(
+            'KOREAN',
+            dxfattribs={'font': 'malgun.ttf'}
+        )
+
     _layer(doc, 'GROUND_PROFILE', 8, 0)
     _layer(doc, 'PLAN_PROFILE', 1, 100)
     _layer(doc, 'GRID_MINOR', 8, 0)
@@ -751,15 +763,20 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             if entity.dxf.layer in hidden_layers:
                 msp.delete_entity(entity)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    # Write to a temporary file, then replace. Never write to the input file.
-    tmp = output.with_name(output.stem + '.tmp.dxf')
-    try:
-        doc.saveas(str(tmp))
-        os.replace(tmp, output)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+    if target_doc is None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to a temporary file, then replace.
+        # Never write to the input file.
+        tmp = output.with_name(output.stem + '.tmp.dxf')
+
+        try:
+            doc.saveas(str(tmp))
+            os.replace(tmp, output)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+
     return {
         'output': str(output), 'start': start, 'end': end, 'tunnel_polyline_count': tunnel_count, 'tunnel_portal_count': portal_count, 'girder_polyline_count': girder_count, 'abutment_count': abutment_count, 'pier_count': pier_count, 'structure_label_count': label_count,
         'vip_count': max(0, len(vip)-2), 'minor_grid_count': len(minor)-len(major),
