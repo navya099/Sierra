@@ -10,10 +10,10 @@ from .tunnel_plan import draw_tunnel_plan
 from .tunnel_plan_portal import draw_plan_portals
 from .tunnel_plan_portal_custom import draw_custom_plan_portals
 from .structure_plan_label import draw_plan_structure_labels, PlanLabelSettings
-from .profile_engine.structure_label import LabelSettings
-from .profile_engine.tunnel_profile import TunnelSettings
-from .profile_engine.tunnel_portal import PortalSettings
-from .profile_engine.tunnel_section import load_tunnel_section
+from structure_label import LabelSettings
+from tunnel_profile import TunnelSettings
+from tunnel_portal import PortalSettings
+from tunnel_section import load_tunnel_section
 from .combined_plan_profile_v1_7_core import make_plan_matchline_polygon, clip_to_plan_polygon
 from .combined_plan_profile_v1_7_core import position_at as position_xy
 

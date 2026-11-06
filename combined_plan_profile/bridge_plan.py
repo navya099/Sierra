@@ -6,7 +6,7 @@ only a schematic placeholder, NOT a construction-ready bridge design.
 from __future__ import annotations
 from dataclasses import dataclass
 import math
-from .profile_engine.bridge_girder import span_ranges
+from bridge_girder import span_ranges
 
 SLAB_LAYER = 'BRIDGE_SLAB_PLAN'
 GIRDER_LAYER = 'BRIDGE_GIRDER_PLAN'

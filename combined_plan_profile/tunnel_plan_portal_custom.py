@@ -1,6 +1,6 @@
 """D.4: place custom plan portal DXF rigidly at tunnel start/end (metres)."""
 import math
-from .profile_engine.tunnel_portal_custom import load_portal_template
+from tunnel_portal_custom import load_portal_template
 
 LAYER = 'TUNNEL_PORTAL_PLAN_CUSTOM'
 

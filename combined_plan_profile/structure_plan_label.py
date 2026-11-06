@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import math
 from ezdxf.enums import TextEntityAlignment
-from .profile_engine.structure_label import label_lines, LabelSettings, station_text
+from structure_label import label_lines, LabelSettings, station_text
 
 @dataclass(frozen=True)
 class PlanLabelSettings:

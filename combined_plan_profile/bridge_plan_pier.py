@@ -1,7 +1,7 @@
 """v12.5.4-C: schematic bridge pier/footing footprints on horizontal alignment."""
 from dataclasses import dataclass
 import math
-from .profile_engine.bridge_girder import span_ranges
+from bridge_girder import span_ranges
 
 COLUMN_LAYER = 'BRIDGE_PIER_COLUMN_PLAN'
 COPING_LAYER = 'BRIDGE_PIER_COPING_PLAN'

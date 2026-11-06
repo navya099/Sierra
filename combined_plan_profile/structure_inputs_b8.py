@@ -4,12 +4,12 @@ from pathlib import Path
 import csv
 import json
 import math
-from .profile_engine.bridge_girder import GirderSettings
-from .profile_engine.bridge_pier import PierSettings
-from .profile_engine.structure_label import LabelSettings
-from .profile_engine.tunnel_profile import TunnelSettings
-from .profile_engine.tunnel_portal import PortalSettings
-from .profile_engine.tunnel_section import load_tunnel_section
+from bridge_girder import GirderSettings
+from bridge_pier import PierSettings
+from structure_label import LabelSettings
+from tunnel_profile import TunnelSettings
+from tunnel_portal import PortalSettings
+from tunnel_section import load_tunnel_section
 
 @dataclass(frozen=True)
 class StructureSegment:
