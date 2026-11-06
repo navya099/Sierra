@@ -46,20 +46,10 @@ def _prepare_plan_context(plan, structures, structure_settings_json, station_ori
     print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
     return source_doc, fl_points, fl_distances, plan_structure_cache, station_cache
 
-def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
-          vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
-          project_name=None,route_name=None,titleblock_config_path=None,
-          left_direction="서울쪽",right_direction="부산쪽",
-          structures_csv=None,structure_settings_json=None,vertical_curve_csv=None,
-          vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None):
-    titleblock_config=load_titleblock_config(titleblock_config_path)
-    structures=load_structures(structures_csv) if structures_csv else None
-    structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
-    if structures is not None:
-        print(f"[B.8 구조물] {len(structures)}개 로드 (교량 {sum(x.kind=='BRIDGE' for x in structures)}, 터널 {sum(x.kind=='TUNNEL' for x in structures)})",flush=True)
-    t0=perf_counter()
-    ground=read_ground_points(profile);vip=extract_profile(profile)
-    print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
+def _prepare_vertical_curves(
+    vip, vertical_curve_csv, vertical_curve_sta_json,
+    vertical_curve_index_json, vertical_curve_simple_csv
+):
     vc_lengths = {}
     vc_sources = [("GUI CSV", vertical_curve_csv), ("측점 JSON", vertical_curve_sta_json),
                   ("인덱스 JSON", vertical_curve_index_json), ("간편 CSV", vertical_curve_simple_csv)]
@@ -76,6 +66,30 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         print(f"[B.11 종곡선 {label}] {len(vc_alignment.curves)}개 로드: " + ", ".join(
             f"VIP {c.vip_index} STA {c.vip_sta:.3f}, L={c.length:g}m, PVC={c.pvc_sta:.3f}, PVT={c.pvt_sta:.3f}"
             for c in vc_alignment.curves), flush=True)
+    return vc_lengths
+
+
+def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
+          vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
+          project_name=None,route_name=None,titleblock_config_path=None,
+          left_direction="서울쪽",right_direction="부산쪽",
+          structures_csv=None,structure_settings_json=None,vertical_curve_csv=None,
+          vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None):
+    titleblock_config=load_titleblock_config(titleblock_config_path)
+    structures=load_structures(structures_csv) if structures_csv else None
+    structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
+    if structures is not None:
+        print(f"[B.8 구조물] {len(structures)}개 로드 (교량 {sum(x.kind=='BRIDGE' for x in structures)}, 터널 {sum(x.kind=='TUNNEL' for x in structures)})",flush=True)
+    t0=perf_counter()
+    ground=read_ground_points(profile);vip=extract_profile(profile)
+    print(f"[성능] PROFILE 입력 해석: {perf_counter()-t0:.2f}초",flush=True)
+    vc_lengths = _prepare_vertical_curves(
+        vip,
+        vertical_curve_csv,
+        vertical_curve_sta_json,
+        vertical_curve_index_json,
+        vertical_curve_simple_csv,
+    )
     lo=max(ground[0][0],vip[0].sta)
     hi=min(ground[-1][0],vip[-1].sta)
     # PLAN측점과 PROFILE측점이 일치하도록 교집합 적용
