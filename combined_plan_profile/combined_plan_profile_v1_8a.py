@@ -23,6 +23,29 @@ from .vertical_curve_inputs_b11 import load_simple_vertical_curves
 from datetime import datetime
 from time import perf_counter
 
+def _prepare_plan_context(plan, structures, structure_settings_json, station_origin):
+    t0=perf_counter()
+    source_doc=ezdxf.readfile(str(plan))
+    fl_points, fl_distances = read_alignment(plan)
+    print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
+    plan_structure_cache = build_structure_cache(structures, fl_points, fl_distances, station_origin, structure_settings_json) if structures else None
+    # Project source station annotations only once; reuse across all sheets.
+    t0=perf_counter()
+    station_cache={}
+    station_layers={'km심볼','200심볼','km문자','200문자','보조측점'}
+    for ent in source_doc.modelspace():
+        layer=ent.dxf.layer.casefold()
+        if layer not in station_layers: continue
+        typ=ent.dxftype()
+        if layer=='보조측점' and typ=='LINE':
+            anchor=((ent.dxf.start.x+ent.dxf.end.x)/2,(ent.dxf.start.y+ent.dxf.end.y)/2)
+        elif typ=='CIRCLE': anchor=ent.dxf.center
+        elif typ in ('TEXT','MTEXT'): anchor=ent.dxf.insert
+        else: continue
+        station_cache[ent.dxf.handle]=_station_of_point(anchor,fl_points,fl_distances,station_origin)
+    print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
+    return source_doc, fl_points, fl_distances, plan_structure_cache, station_cache
+
 def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=1000.,
           vertical_scale=400.,station_origin=0.,start_sta=None,end_sta=None,
           project_name=None,route_name=None,titleblock_config_path=None,
@@ -68,26 +91,11 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
                                local,vertical_curve_lengths=vc_lengths,structures=structures,target_doc=doc,**structure_kwargs)
         print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
-    t0=perf_counter()
-    source_doc=ezdxf.readfile(str(plan))
-    fl_points, fl_distances = read_alignment(plan)
-    print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
-    plan_structure_cache = build_structure_cache(structures, fl_points, fl_distances, station_origin, structure_settings_json) if structures else None
-    # Project source station annotations only once; reuse across all sheets.
-    t0=perf_counter()
-    station_cache={}
-    station_layers={'km심볼','200심볼','km문자','200문자','보조측점'}
-    for ent in source_doc.modelspace():
-        layer=ent.dxf.layer.casefold()
-        if layer not in station_layers: continue
-        typ=ent.dxftype()
-        if layer=='보조측점' and typ=='LINE':
-            anchor=((ent.dxf.start.x+ent.dxf.end.x)/2,(ent.dxf.start.y+ent.dxf.end.y)/2)
-        elif typ=='CIRCLE': anchor=ent.dxf.center
-        elif typ in ('TEXT','MTEXT'): anchor=ent.dxf.insert
-        else: continue
-        station_cache[ent.dxf.handle]=_station_of_point(anchor,fl_points,fl_distances,station_origin)
-    print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
+    source_doc, fl_points, fl_distances, plan_structure_cache, station_cache = (
+        _prepare_plan_context(
+            plan, structures, structure_settings_json, station_origin
+        )
+    )
     def render_plan(doc,a,b,index,transform,angle):
         t0=perf_counter()
         plan_counts=render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
