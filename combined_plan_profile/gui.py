@@ -48,6 +48,8 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             'right_direction': tk.StringVar(value='부산쪽'),
         }
         self.use_vc = tk.BooleanVar(value=bool(getattr(owner, 'vc_lengths', {})))
+        editor = getattr(owner, 'structure_editor', None)
+        self.use_structures = tk.BooleanVar(value=bool(getattr(editor, 'segments', [])))
         self._build()
         self.protocol('WM_DELETE_WINDOW', self._close)
         self.after(100, self._poll)
@@ -88,6 +90,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         options.columnconfigure(1, weight=1)
         options.columnconfigure(3, weight=1)
         ttk.Checkbutton(container, text='현재 GUI 종곡선 설정 적용 (측점 JSON)', variable=self.use_vc).pack(anchor='w', pady=3)
+        ttk.Checkbutton(container, text='현재 구조물 편집기 목록 자동 적용 (수동 CSV보다 우선)', variable=self.use_structures).pack(anchor='w', pady=3)
         actions = ttk.Frame(container)
         actions.pack(fill='x', pady=5)
         ttk.Button(actions, text='실행 명령 미리보기', command=self._preview).pack(side='left', padx=(0, 8))
@@ -120,7 +123,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         for key in ('template', 'titleblock_config', 'structures_csv', 'structure_settings_json'):
             if values[key] and not Path(values[key]).is_file():
                 raise ValueError(f'{key}: 선택한 파일이 없습니다.')
-        if values['structure_settings_json'] and not values['structures_csv']:
+        if values['structure_settings_json'] and not values['structures_csv'] and not self.use_structures.get():
             raise ValueError('구조물 설정 JSON을 사용하려면 구조물 CSV도 지정하세요.')
         if not values['output_dir']:
             raise ValueError('출력 폴더를 선택하세요.')
@@ -150,7 +153,17 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                     raise ValueError('종곡선 측점/길이 값이 올바르지 않습니다.')
                 if b > 0:
                     vc[str(a)] = b
-        return values, vc
+        segments = None
+        if self.use_structures.get():
+            editor = getattr(self.owner, 'structure_editor', None)
+            if editor is None:
+                raise ValueError('구조물 편집기를 찾을 수 없습니다.')
+            segments = list(editor.segments)
+            if not segments:
+                raise ValueError('구조물 자동 적용이 선택되었지만 현재 구조물 목록이 비어 있습니다.')
+            # Auto CSV supersedes the manually selected CSV, but does not change the GUI field.
+            values['structures_csv'] = ''
+        return values, vc, segments
 
     @staticmethod
     def _command(values, vc_json=None):
@@ -176,7 +189,9 @@ class CombinedPlanProfileWindow(tk.Toplevel):
 
     def _preview(self):
         try:
-            values, vc = self._values()
+            values, vc, segments = self._values()
+            if segments is not None:
+                values['structures_csv'] = '<현재 GUI 구조물 CSV>'
             command = self._command(values, '<현재 GUI 종곡선 JSON>' if vc else None)
             self._append(subprocess.list2cmdline(command))
         except (ValueError, OSError) as exc:
@@ -186,7 +201,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         if self.running:
             return
         try:
-            values, vc = self._values()
+            values, vc, segments = self._values()
         except (ValueError, OSError) as exc:
             messagebox.showerror('입력 오류', str(exc), parent=self)
             return
@@ -197,15 +212,21 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         self.running = True
         self.run_button.configure(state='disabled')
         self._append('종평면도 생성 시작')
-        threading.Thread(target=self._worker, args=(values, vc), daemon=True).start()
+        threading.Thread(target=self._worker, args=(values, vc, segments), daemon=True).start()
 
-    def _worker(self, values, vc):
+    def _worker(self, values, vc, segments):
         try:
             with tempfile.TemporaryDirectory(prefix='sierra_combined_') as tempdir:
                 vc_path = None
                 if vc:
                     vc_path = Path(tempdir) / 'vertical_curves.json'
                     vc_path.write_text(json.dumps(vc, ensure_ascii=False, indent=2), encoding='utf-8')
+                if segments is not None:
+                    from structure_engine import export_csv
+                    structure_path = Path(tempdir) / 'structure_segments.csv'
+                    export_csv(segments, structure_path)
+                    values['structures_csv'] = str(structure_path)
+                    self.events.put(('log', f'[G1-2C-2] 구조물 {len(segments)}개 자동 연동 (임시 CSV)'))
                 cmd = self._command(values, vc_path)
                 Path(values['output_dir']).mkdir(parents=True, exist_ok=True)
                 self.events.put(('log', subprocess.list2cmdline(cmd)))
