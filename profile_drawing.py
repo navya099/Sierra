@@ -846,13 +846,21 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
         girder_count = draw_bridge_girders(msp, structures, girder_settings or GirderSettings(),
                                            start, end, datum_segments, elevation_at,
                                            display_sta, display_el)
-        abutment_count = draw_profile_abutments(msp, structures, girder_settings or GirderSettings(),
-                                               start, end, datum_segments, elevation_at,
-                                               display_sta, display_el, factor)
-        pier_count = draw_profile_piers(msp, structures, girder_settings or GirderSettings(),
-                                        pier_settings or PierSettings(), start, end, datum_segments,
-                                        elevation_at, lambda s: raw_ground.at(s)[0],
-                                        display_sta, display_el, factor)
+        # R2-8: Clip bridge substructures at the profile graph lower boundary.
+        abutment_count = draw_profile_abutments(
+            msp, structures, girder_settings or GirderSettings(),
+            start, end, datum_segments, elevation_at,
+            display_sta, display_el, factor,
+            clip_bottom_y=ylo,
+        )
+
+        pier_count = draw_profile_piers(
+            msp, structures, girder_settings or GirderSettings(),
+                             pier_settings or PierSettings(), start, end, datum_segments,
+            elevation_at, lambda s: raw_ground.at(s)[0],
+            display_sta, display_el, factor,
+            clip_bottom_y=ylo,
+        )
 
     label_count=0
     if structures:
