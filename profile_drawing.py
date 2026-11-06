@@ -66,7 +66,9 @@ class DrawingOptions:
     sheet_end_sta: float | None = None
     layout_preset: dict | None = None  # S3-D2: explicit opt-in; legacy output unchanged
     custom_preset_path: str | None = None  # S3-D9: explicit user JSON file
-
+    elevation_pole_at_datum_breaks: bool = False
+    elevation_pole_labels: bool = False
+    elevation_pole_solid: bool = False
 
 def _multiples(start: float, end: float, step: float) -> list[float]:
     if not math.isfinite(step) or step <= 0:
@@ -76,8 +78,20 @@ def _multiples(start: float, end: float, step: float) -> list[float]:
     return [i * step for i in range(i0, i1 + 1)]
 
 
-def _layer(doc, name, color, lineweight=25):
-    doc.layers.new(name, dxfattribs={'color': color, 'lineweight': lineweight})
+
+def _layer(doc, name, color, lineweight):
+    # R2-5C: Reuse an existing layer instead of recreating it.
+    if name in doc.layers:
+        return doc.layers.get(name)
+
+    return doc.layers.new(
+        name,
+        dxfattribs={
+            'color': color,
+            'lineweight': lineweight,
+        },
+    )
+
 
 
 def _text(msp, text, x, y, height, layer, rotation=0, align=TextEntityAlignment.MIDDLE_CENTER):
@@ -400,6 +414,83 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     _layer(doc, 'ALIGNMENT_ELEMENT_TEXT', 7, 0)
     msp = doc.modelspace()
 
+    def draw_elevation_pole(pole_left, datum_left, is_break=False):
+        _layer(doc, 'ELEVATION_POLE', 7, 18)
+        pole_mid = pole_left + 1.25
+        pole_right = pole_left + 2.50
+        pole_bottom = layout.origin_y + layout.band_top  # v1.9-B.2: connect to top of PROFILE_BAND
+        pole_top = layout.origin_y + options.plot_upper_y
+        stripe_h = 10.0
+        if pole_top <= pole_bottom:
+            raise ValueError('표고 폴대 상단은 하단보다 높아야 합니다.')
+        # All stripes originate at the TOP, as in SAMPLE_ELEVATION_POLE.dxf.
+        count = math.ceil((pole_top - pole_bottom) / stripe_h - 1e-9)
+        for i in range(count):
+            yt = pole_top - i * stripe_h
+            yb = max(pole_bottom, yt - stripe_h)
+            if yt <= yb + 1e-8:
+                continue
+            xl, xr = ((pole_mid, pole_right) if i % 2 == 0
+                      else (pole_left, pole_mid))
+            # DXF SOLID order: top-left, top-right, bottom-left, bottom-right.
+            msp.add_solid([(xl, yt), (xr, yt), (xl, yb), (xr, yb)],
+                          dxfattribs={'layer': 'ELEVATION_POLE', 'color': 7})
+        for x in (pole_left, pole_mid, pole_right):
+            _line(msp, x, pole_bottom, x, pole_top, 'ELEVATION_POLE')
+        for i in range(count + 1):
+            y = max(pole_bottom, pole_top - i * stripe_h)
+            _line(msp, pole_left, y, pole_right, y, 'ELEVATION_POLE')
+
+        # v1.9-B.3.2: original sample's vertical datum-reference note.
+        # Position relative to the pole's right edge, as in SAMPLE_ELEVATION_POLE.dxf.
+        _layer(doc, 'ELEVATION_POLE_NOTE', 7, 0)
+        _text(
+            msp,
+            '수준기면은 국토교통부 국토지리정보원 설정기면 0m를 100m로함.',
+            pole_right + 5.42, pole_bottom, 3.0,
+            'ELEVATION_POLE_NOTE', rotation=90,
+            align=TextEntityAlignment.LEFT,
+        )
+
+        if options.elevation_pole_labels:
+            # Use the EXACT inverse of ProfileLayout.elevation_y(), including
+            # the datum at the left edge of the sheet. The pole is located in
+            # the left label column, so its labels refer to that datum only.
+            # Subsequent datum breaks are already marked in the profile graph.
+            _layer(doc, 'ELEVATION_POLE_TEXT', 7, 0)
+            graph_datum_y = layout.origin_y + options.plot_lower_y
+            el_bottom = datum_left + (pole_bottom - graph_datum_y) * options.vertical_scale / 1000.0
+            el_top = datum_left + (pole_top - graph_datum_y) * options.vertical_scale / 1000.0
+            # 8m corresponds to 20 drawing mm at V=400. For other scales,
+            # keep a minimum spacing of 18mm to avoid overlapping text.
+            nice_steps = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+            label_step = next((v for v in nice_steps if v * 1000.0 / options.vertical_scale >= 18.0), 1000)
+            for el in _multiples(el_bottom, el_top, label_step):
+                y = graph_datum_y + (el - datum_left) * 1000.0 / options.vertical_scale
+                if not pole_bottom - 1e-7 <= y <= pole_top + 1e-7:
+                    continue
+                # v1.9-B.3.3: SAMPLE_ELEVATION_POLE.dxf uses a 13.75 mm
+                # leader from the pole's left edge.  Its elevation TEXT has
+                # MIDDLE_LEFT alignment at the leader endpoint, 3 mm above
+                # the elevation line (sample: line y=240.25, align y=243.25).
+                label_x = pole_left - 13.75
+                _line(msp, label_x, y, pole_left, y, 'ELEVATION_POLE_TEXT')
+                _text(msp, f'{el:.2f}', label_x, y + 3.0, 2.5,
+                      'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_LEFT)
+            # Prevent misleading interpretation when a sheet has multiple
+            # datum segments: explicitly identify the pole's datum.
+            if len(datum_segments) > 1 and not is_break:
+                _text(msp, f'기준 EL.{datum_left:.0f} (시점)', pole_left - 3.0,
+                      pole_top + 5.0, 2.5, 'ELEVATION_POLE_TEXT',
+                      align=TextEntityAlignment.MIDDLE_RIGHT)
+
+    # R2-5C-3: Optional elevation pole at the left edge.
+    if options.elevation_pole_solid:
+        draw_elevation_pole(
+            data_left,
+            datum_segments[0].datum_el,
+        )
+
     def clipped(poly, fn, seg_start, seg_end):
         return ([(seg_start, fn.at(seg_start)[0])]
                 + [(x, y) for x, y in poly if seg_start < x < seg_end]
@@ -472,25 +563,72 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                    if options.auto_datum else display_el(raw_ground.at(sta)[0], datum_at(sta))),
               display_sta(sta), layout.origin_y + layout.band_top, 'GRID_MAJOR')
 
-    # The band remains continuous; datum change marker exists only above band.
+
+    # R2-5C-3: Keep the existing S3-D9 datum marker unless
+    # both optional elevation-pole switches are enabled.
+    # The band remains continuous.
     if options.auto_datum:
         for left, right in zip(datum_segments, datum_segments[1:]):
             x = display_sta(left.end_sta)
             y0 = layout.origin_y + layout.band_top
             y1 = yhi
-            # Vertical break line with small zig-zag at the middle.
-            ym = (y0 + y1) / 2
-            break_half_width = (preset['layout']['symbols']['datum_break_width'] if preset else 2.5)
-            break_half_height = (preset['layout']['symbols']['datum_break_height'] if preset else 7)
-            points = [(x, y0), (x, ym-break_half_height),
-                      (x-break_half_width, ym-annotation_dims['datum_break_kink_dy']),
-                      (x+break_half_width, ym+annotation_dims['datum_break_kink_dy']),
-                      (x, ym+break_half_height), (x, y1)]
-            msp.add_lwpolyline(points, dxfattribs={'layer': 'DATUM_BREAK'})
-            _text(msp, f'EL {left.datum_el:.0f}', x-annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
-                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
-            _text(msp, f'EL {right.datum_el:.0f}', x+annotation_dims['datum_label_dx'], y0+annotation_dims['datum_label_dy'],
-                  (preset['layout']['text']['datum_text_height'] if preset else 2.4), 'DATUM_LABEL')
+
+            if (
+                options.elevation_pole_solid
+                and options.elevation_pole_at_datum_breaks
+            ):
+                draw_elevation_pole(
+                    x - 2.5,
+                    right.datum_el,
+                    is_break=True,
+                )
+            else:
+                # Original S3-D9 datum-break representation.
+                ym = (y0 + y1) / 2
+                break_half_width = (
+                    preset['layout']['symbols']['datum_break_width']
+                    if preset else 2.5
+                )
+                break_half_height = (
+                    preset['layout']['symbols']['datum_break_height']
+                    if preset else 7
+                )
+                points = [
+                    (x, y0),
+                    (x, ym - break_half_height),
+                    (x - break_half_width,
+                     ym - annotation_dims['datum_break_kink_dy']),
+                    (x + break_half_width,
+                     ym + annotation_dims['datum_break_kink_dy']),
+                    (x, ym + break_half_height),
+                    (x, y1),
+                ]
+                msp.add_lwpolyline(
+                    points,
+                    dxfattribs={'layer': 'DATUM_BREAK'},
+                )
+                _text(
+                    msp,
+                    f'EL {left.datum_el:.0f}',
+                    x - annotation_dims['datum_label_dx'],
+                    y0 + annotation_dims['datum_label_dy'],
+                    (
+                        preset['layout']['text']['datum_text_height']
+                        if preset else 2.4
+                    ),
+                    'DATUM_LABEL',
+                )
+                _text(
+                    msp,
+                    f'EL {right.datum_el:.0f}',
+                    x + annotation_dims['datum_label_dx'],
+                    y0 + annotation_dims['datum_label_dy'],
+                    (
+                        preset['layout']['text']['datum_text_height']
+                        if preset else 2.4
+                    ),
+                    'DATUM_LABEL',
+                )
 
     # Reference layout: band rows from bottom up, 20/20/20/15/15.
     # With the optional alignment row off, retain its reserved space.
