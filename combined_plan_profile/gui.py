@@ -6,6 +6,7 @@ The existing CLI generator remains unchanged.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 import math
 import queue
 import subprocess
@@ -50,6 +51,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         self.use_vc = tk.BooleanVar(value=bool(getattr(owner, 'vc_lengths', {})))
         editor = getattr(owner, 'structure_editor', None)
         self.use_structures = tk.BooleanVar(value=bool(getattr(editor, 'segments', [])))
+        self.use_structure_settings = tk.BooleanVar(value=bool(getattr(editor, 'segments', [])))
         self._build()
         self.protocol('WM_DELETE_WINDOW', self._close)
         self.after(100, self._poll)
@@ -91,6 +93,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         options.columnconfigure(3, weight=1)
         ttk.Checkbutton(container, text='현재 GUI 종곡선 설정 적용 (측점 JSON)', variable=self.use_vc).pack(anchor='w', pady=3)
         ttk.Checkbutton(container, text='현재 구조물 편집기 목록 자동 적용 (수동 CSV보다 우선)', variable=self.use_structures).pack(anchor='w', pady=3)
+        ttk.Checkbutton(container, text='현재 구조물 편집기 상세 설정 자동 적용 (수동 JSON보다 우선)', variable=self.use_structure_settings).pack(anchor='w', pady=3)
         actions = ttk.Frame(container)
         actions.pack(fill='x', pady=5)
         ttk.Button(actions, text='실행 명령 미리보기', command=self._preview).pack(side='left', padx=(0, 8))
@@ -163,7 +166,49 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                 raise ValueError('구조물 자동 적용이 선택되었지만 현재 구조물 목록이 비어 있습니다.')
             # Auto CSV supersedes the manually selected CSV, but does not change the GUI field.
             values['structures_csv'] = ''
-        return values, vc, segments
+        settings = None
+        if self.use_structure_settings.get():
+            editor = getattr(self.owner, 'structure_editor', None)
+            if editor is None:
+                raise ValueError('구조물 상세 설정을 제공할 편집기가 없습니다.')
+            if segments is None and not values['structures_csv']:
+                raise ValueError('구조물 상세 설정 자동 적용에는 구조물 목록 또는 수동 CSV가 필요합니다.')
+            # Validate and snapshot Tk variables on the main GUI thread.
+            girder = editor.girder_settings()
+            pier = editor.pier_settings()
+            label = editor.label_settings()
+            tunnel = editor.tunnel_settings()
+            if tunnel.portal is None:
+                raise ValueError('현재 엔진의 설정 JSON 로더는 갱문 비활성화를 지원하지 않습니다. 자동 설정을 해제하고 수동 JSON을 사용하거나 갱문을 활성화하세요.')
+            # G1-2C-4: reuse the existing bridge GUI abutment template.
+            # The editor method resolves an empty selection to its built-in DXF.
+            abutment_path = Path(editor.bridge_abutment_plan_path()).resolve()
+            if not abutment_path.is_file():
+                raise ValueError(f'교대 평면 템플릿 DXF 파일이 없습니다: {abutment_path}')
+            settings = {
+                'plan': {
+                    'bridge_abutment_plan_dxf': str(abutment_path),
+                },
+                'girder': asdict(girder),
+                'pier': asdict(pier),
+                'label': asdict(label),
+                'bridge_layer_colors': editor.bridge_layer_colors(),
+                'tunnel': {
+                    'bottom_offset': tunnel.bottom_offset,
+                    'body_height': tunnel.body_height,
+                    'sample_step': tunnel.sample_step,
+                    'color': tunnel.color,
+                    'lining_thickness': tunnel.lining_thickness,
+                },
+                'portal': asdict(tunnel.portal),
+            }
+            if editor.tunnel_section_mode.get() == 'dxf':
+                section_path = editor.tunnel_section_path.get().strip()
+                if not section_path or not Path(section_path).is_file():
+                    raise ValueError('사용자 터널 단면 DXF 경로를 확인하세요.')
+                settings['tunnel']['section_dxf'] = str(Path(section_path).resolve())
+            values['structure_settings_json'] = ''
+        return values, vc, segments, settings
 
     @staticmethod
     def _command(values, vc_json=None):
@@ -189,9 +234,11 @@ class CombinedPlanProfileWindow(tk.Toplevel):
 
     def _preview(self):
         try:
-            values, vc, segments = self._values()
+            values, vc, segments, settings = self._values()
             if segments is not None:
                 values['structures_csv'] = '<현재 GUI 구조물 CSV>'
+            if settings is not None:
+                values['structure_settings_json'] = '<현재 GUI 구조물 설정 JSON>'
             command = self._command(values, '<현재 GUI 종곡선 JSON>' if vc else None)
             self._append(subprocess.list2cmdline(command))
         except (ValueError, OSError) as exc:
@@ -201,7 +248,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         if self.running:
             return
         try:
-            values, vc, segments = self._values()
+            values, vc, segments, settings = self._values()
         except (ValueError, OSError) as exc:
             messagebox.showerror('입력 오류', str(exc), parent=self)
             return
@@ -212,9 +259,9 @@ class CombinedPlanProfileWindow(tk.Toplevel):
         self.running = True
         self.run_button.configure(state='disabled')
         self._append('종평면도 생성 시작')
-        threading.Thread(target=self._worker, args=(values, vc, segments), daemon=True).start()
+        threading.Thread(target=self._worker, args=(values, vc, segments, settings), daemon=True).start()
 
-    def _worker(self, values, vc, segments):
+    def _worker(self, values, vc, segments, settings):
         try:
             with tempfile.TemporaryDirectory(prefix='sierra_combined_') as tempdir:
                 vc_path = None
@@ -227,6 +274,11 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                     export_csv(segments, structure_path)
                     values['structures_csv'] = str(structure_path)
                     self.events.put(('log', f'[G1-2C-2] 구조물 {len(segments)}개 자동 연동 (임시 CSV)'))
+                if settings is not None:
+                    settings_path = Path(tempdir) / 'structure_settings.json'
+                    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding='utf-8')
+                    values['structure_settings_json'] = str(settings_path)
+                    self.events.put(('log', '[G1-2C-4] 구조물 상세 설정 및 교대 평면 템플릿 자동 연동 (임시 JSON)'))
                 cmd = self._command(values, vc_path)
                 Path(values['output_dir']).mkdir(parents=True, exist_ok=True)
                 self.events.put(('log', subprocess.list2cmdline(cmd)))
