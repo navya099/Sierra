@@ -191,6 +191,19 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             plan_section = editor.bridge_plan_section()
             plan_section.validate()
             plan_pier = editor.plan_pier_settings()
+            # G1-2D-2: preserve the main GUI's portal options, while making
+            # custom DXF paths independent of the subprocess working directory.
+            portal_config = asdict(tunnel.portal)
+            for portal_key, portal_label in (
+                ('custom_dxf', '종단 갱문'),
+                ('plan_custom_dxf', '평면 갱문'),
+            ):
+                custom_path = str(portal_config.get(portal_key) or '').strip()
+                if custom_path:
+                    resolved = Path(custom_path).resolve()
+                    if not resolved.is_file():
+                        raise ValueError(f'사용자 지정 {portal_label} DXF 파일이 없습니다: {resolved}')
+                    portal_config[portal_key] = str(resolved)
             settings = {
                 'plan': {
                     'bridge_abutment_plan_dxf': str(abutment_path),
@@ -208,7 +221,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                     'color': tunnel.color,
                     'lining_thickness': tunnel.lining_thickness,
                 },
-                'portal': asdict(tunnel.portal),
+                'portal': portal_config,
             }
             if editor.tunnel_section_mode.get() == 'dxf':
                 section_path = editor.tunnel_section_path.get().strip()
@@ -286,7 +299,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                     settings_path = Path(tempdir) / 'structure_settings.json'
                     settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding='utf-8')
                     values['structure_settings_json'] = str(settings_path)
-                    self.events.put(('log', '[G1-2C-4] 구조물 상세 설정 및 교대 평면 템플릿 자동 연동 (임시 JSON)'))
+                    self.events.put(('log', '[G1-2D-2] 구조물 상세 설정·교대/터널 DXF 자동 연동 (임시 JSON)'))
                 cmd = self._command(values, vc_path)
                 Path(values['output_dir']).mkdir(parents=True, exist_ok=True)
                 self.events.put(('log', subprocess.list2cmdline(cmd)))
