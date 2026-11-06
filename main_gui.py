@@ -109,6 +109,12 @@ class AlignmentGUI:
         file_menu.add_separator()
         file_menu.add_command(label='도면 출력 DXF', command=self.export_drawing)
         file_menu.add_command(label='결과 CSV 폴더 열기', command=self.open_folder)
+
+        file_menu.add_command(
+            label='종평면도 생성...',
+            command=self.open_combined_plan_profile
+        )
+
         file_menu.add_separator()
         file_menu.add_command(label='종료', command=self.close)
         menu.add_cascade(label='파일', menu=file_menu)
@@ -258,6 +264,15 @@ class AlignmentGUI:
         footer.pack(fill='x', pady=(6, 0))
         self.export_button = ttk.Button(footer, text='도면 출력 (DXF)', command=self.export_drawing, state='disabled')
         self.export_button.pack(side='left', padx=(0, 8))
+
+
+        ttk.Button(
+            footer,
+            text='종평면도 생성...',
+            command=self.open_combined_plan_profile
+        ).pack(side='left', padx=(0, 8))
+
+
         ttk.Button(footer, text='결과 CSV 열기', command=self.open_folder).pack(side='left')
         ttk.Button(footer, text='종료', command=self.close).pack(side='right')
         ttk.Button(footer, text='매뉴얼', command=self.show_manual).pack(side='right', padx=8)
@@ -932,6 +947,10 @@ class AlignmentGUI:
         self.stop_watch()
         self.root.destroy()
 
+
+    def open_combined_plan_profile(self):
+        from combined_plan_profile.gui import open_combined_plan_profile_gui
+        open_combined_plan_profile_gui(self.root, self)
 
 def main():
     root = RootClass()
