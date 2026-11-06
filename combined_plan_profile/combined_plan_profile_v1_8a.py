@@ -6,8 +6,8 @@ import argparse
 from dataclasses import replace
 # R2-6: Use the unified S3-D9 profile engine.
 from profile_drawing import create_profile_drawing, DrawingOptions
-from .profile_engine.profile_calculator import read_ground_points
-from .profile_engine.dxf_reader import extract_profile
+from profile_calculator import read_ground_points
+from dxf_reader import extract_profile
 from .combined_plan_profile_v1_7_core import generate, read_alignment
 from .plan_entities_v1_7 import render_plan_entities, DEFAULT_LAYERS, _station_of_point
 from .plan_ip_lines_v1_8a import render_ip_lines
