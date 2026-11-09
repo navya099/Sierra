@@ -11,6 +11,7 @@ from .tunnel_plan_portal import draw_plan_portals
 from .tunnel_plan_portal_custom import draw_custom_plan_portals
 from .structure_plan_label import draw_plan_structure_labels, PlanLabelSettings
 from structure_label import LabelSettings
+from profile_transform import DrawingMode
 from tunnel_profile import TunnelSettings
 from tunnel_portal import PortalSettings
 from tunnel_section import load_tunnel_section
@@ -30,8 +31,9 @@ def _position(s, points, distances):
     return ((a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t),((b[0]-a[0])/d,(b[1]-a[1])/d))
 
 
-def build_structure_cache(structures,points,distances,station_origin,settings_path,*,label_style=None,horizontal_scale=1000.):
+def build_structure_cache(structures,points,distances,station_origin,settings_path,*,label_style=None,horizontal_scale=1000.,drawing_mode=DrawingMode.REPORT):
     """Generate source XY entities only once, independent of number of sheets."""
+    drawing_mode = DrawingMode(drawing_mode)
     cfg=json.loads(Path(settings_path).read_text(encoding='utf-8')) if settings_path else {}
     plan=cfg.get('plan',{})
     if not isinstance(plan,dict): raise ValueError('plan 설정은 JSON 객체여야 합니다')
@@ -71,18 +73,19 @@ def build_structure_cache(structures,points,distances,station_origin,settings_pa
             if not math.isfinite(horizontal_scale) or horizontal_scale <= 0:
                 raise ValueError('평면 주석 축척은 양수여야 합니다.')
             from dataclasses import replace
+            source_height_factor = 1.0 if drawing_mode is DrawingMode.CAD else horizontal_scale / 1000.
             if isinstance(label_style, dict):
                 # FIX3: schema-v2 plan style is a mapping, not ProfileLabelStyle.
                 paper_height = label_style['text']['height']
                 plan_label = replace(plan_label,
-                                     height=paper_height * horizontal_scale / 1000.,
+                                     height=paper_height * source_height_factor,
                                      color=label_style['text']['color'],
                                      offset=label_style['placement']['offset'],
                                      layer=label_style['layer'])
             else:
                 paper_height = label_style.text_height
                 plan_label = replace(plan_label,
-                                     height=paper_height * horizontal_scale / 1000.,
+                                     height=paper_height * source_height_factor,
                                      color=label_style.color)
             print(f'[G1-2D-4 평면 주석] H{horizontal_scale:g}; 출력 문자={paper_height:g}, '
                   f'원본 문자={plan_label.height:g}, 색상={plan_label.color}, '

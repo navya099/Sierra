@@ -2,6 +2,7 @@
 종단면도 영역은 예약만 하며 기존 final_plan / final_result는 변경하지 않음.
 """
 from pathlib import Path
+from profile_transform import DrawingMode
 import argparse, math, sys
 from time import perf_counter
 import ezdxf
@@ -230,7 +231,8 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
              vertical_scale=400., project_name=None, route_name=None, titleblock_config=None,
-             left_direction="서울쪽", right_direction="부산쪽"):
+             left_direction="서울쪽", right_direction="부산쪽", drawing_mode=DrawingMode.REPORT):
+    drawing_mode = DrawingMode(drawing_mode)
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     pts,ds=read_alignment(plan)
     fl_global_width=read_fl_global_width(plan)
@@ -264,7 +266,7 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         ca,sa_s=math.cos(angle),math.sin(angle)
         anchor=pa  # 시트 시작 측점을 종단면도와 동일한 X=70mm에 배치
         cx=70.;cy=(PLAN_RECT[1]+PLAN_RECT[3])/2
-        scale=1000./horizontal_scale
+        scale=1.0 if drawing_mode is DrawingMode.CAD else 1000./horizontal_scale
         def transform(p):
             dx,dy=p[0]-anchor[0],p[1]-anchor[1]
             return (cx+(dx*ca+dy*sa_s)*scale,cy+(-dx*sa_s+dy*ca)*scale)

@@ -6,6 +6,7 @@ import argparse
 from dataclasses import replace
 # R2-6: Use the unified S3-D9 profile engine.
 from profile_drawing import create_profile_drawing, DrawingOptions
+from profile_transform import DrawingMode
 from profile_presets.loader import load_preset, load_preset_file
 from profile_presets.runtime import to_drawing_preset
 from structure_label import ProfileLabelStyle
@@ -25,6 +26,40 @@ from .vertical_curve_inputs_b10 import load_vertical_curve_csv
 from .vertical_curve_inputs_b11 import load_simple_vertical_curves
 from datetime import datetime
 from time import perf_counter
+# G1-2D-5-LOG1 filter
+import sys
+
+class SierraLogFilter:
+    DEBUG_PREFIXES = (
+        "[성능]", "[FL GLOBAL_WIDTH]", "[곡선제원/인출선]",
+        "[IP교점선]", "[IP문자/제원표]", "[평면 VIP/구배]",
+        "[B.9 평면 구조물]", "[B.13]", "[도각 속성]",
+        "[G1-2D-4-FIX2]",
+    )
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.pending = ""
+
+    def write(self, text):
+        self.pending += str(text)
+        while "\n" in self.pending:
+            line, self.pending = self.pending.split("\n", 1)
+            stripped = line.lstrip()
+            titleblock_detail = line.startswith("  ") and " → " in line and " : " in line
+            if not (stripped.startswith(self.DEBUG_PREFIXES) or titleblock_detail):
+                self.stream.write(line + "\n")
+        return len(text)
+
+    def flush(self):
+        if self.pending:
+            self.stream.write(self.pending)
+            self.pending = ""
+        self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
 
 def _prepare_plan_context(plan, structures, structure_settings_json, station_origin, *,
                           label_style=None, horizontal_scale=1000.):
@@ -34,7 +69,7 @@ def _prepare_plan_context(plan, structures, structure_settings_json, station_ori
     print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
     plan_structure_cache = build_structure_cache(
         structures, fl_points, fl_distances, station_origin, structure_settings_json,
-        label_style=label_style, horizontal_scale=horizontal_scale
+        label_style=label_style, horizontal_scale=horizontal_scale, drawing_mode=DrawingMode.CAD
     ) if structures else None
     # Project source station annotations only once; reuse across all sheets.
     t0=perf_counter()
@@ -130,7 +165,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     start=max(lo,station_origin) if start_sta is None else start_sta
     end=min(hi,station_origin+read_plan_length(plan)) if end_sta is None else end_sta
     if start<lo or end>hi:raise ValueError("PROFILE 범위를 벗어나는 측점")
-    options=DrawingOptions(origin_x=35.,origin_y=70.,horizontal_scale=horizontal_scale,
+    options=DrawingOptions(origin_x=35.,origin_y=70.,drawing_mode=DrawingMode.CAD,horizontal_scale=horizontal_scale,
         vertical_scale=vertical_scale,plot_lower_y=135.,plot_upper_y=235.,
         sheet_start_sta=start,sheet_end_sta=end,horizontal_alignment_dxf=str(Path(plan).resolve()),elevation_pole_solid=True,elevation_pole_labels=True,elevation_pole_at_datum_breaks=True)
     def render(doc,a,b,index):
@@ -172,7 +207,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,
          project_name=project_name,route_name=route_name,titleblock_config=titleblock_config,
          profile_hook=render,plan_hook=render_plan,
-         left_direction=left_direction,right_direction=right_direction)
+         left_direction=left_direction,right_direction=right_direction,
+         drawing_mode=DrawingMode.CAD)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
@@ -203,7 +239,10 @@ if __name__=="__main__":
     p.add_argument("--structures-csv",type=Path,help="기존 구조물 GUI에서 저장한 CSV (미지정 시 B.7 동작 유지)")
     p.add_argument("--structure-settings-json",type=Path,help="거더/교각/터널/주석 설정 JSON (선택)")
     p.add_argument("--structure-label-preset",type=Path,help="S3-D9 CAD 프리셋 JSON (생략 시 축척별 내장 프리셋)")
+    p.add_argument("--debug-log", action="store_true", help="상세 로그 표시")
     a=p.parse_args()
+    if not a.debug_log:
+        sys.stdout = SierraLogFilter(sys.stdout)
     started_at = datetime.now()
     started_tick = perf_counter()
     print(f"[시작시간] {started_at:%Y-%m-%d %H:%M:%S}", flush=True)
@@ -215,7 +254,11 @@ if __name__=="__main__":
             a.structures_csv,a.structure_settings_json,a.vertical_curve_csv,
             a.vertical_curve_sta_json,a.vertical_curve_index_json,a.vertical_curve_simple_csv,
             a.structure_label_preset):
-            print(item, flush=True)
+            if isinstance(item, tuple) and len(item) >= 3:
+                output_file, sheet_start, sheet_end = item[:3]
+                print(f"[시트 완료] {Path(output_file).name} | STA {sheet_start:g}~{sheet_end:g}m", flush=True)
+            else:
+                print(item, flush=True)
     finally:
         finished_at = datetime.now()
         elapsed = perf_counter() - started_tick
