@@ -6,3 +6,9 @@ __pycache__/
 *.dxf
 *.xlsx
 
+# Allow reproducible test fixtures
+!assets/
+!assets/test/
+!assets/test/**/
+!assets/test/**
+

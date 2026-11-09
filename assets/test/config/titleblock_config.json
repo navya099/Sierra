@@ -1,0 +1,19 @@
+{
+  "drawing_title": "종평면도",
+  "attributes": {
+    "TD_DNAME": "수도권 광역급행철도 F노선 실시설계",
+    "TD_CNAME": "수도권 광역급행철도 F노선 건설공사",
+    "TD_DCOMP": "ABC엔지니어링",
+    "TD_DSCCOMP": "ABC감리",
+    "TD_CCOMP": "ABC플랜트",
+    "TD_CSCOMP": "ABC시공감리",
+    "TD_FIELD": "토목",
+    "TD_CSTEP": "실시설계",
+    "TD_DIRCODE": "하선",
+    "TD_RLCLASS": "일반철도",
+    "TD_RLNAME": "수도권 광역급행철도 F노선",
+    "TD_RLSECT": "서울시 광진구",
+    "TD_CSECT": "1공구",
+    "TD_DNAME_TOP": "수도권 광역급행철도 F노선"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "girder": {
+    "girder_h": 2.0,
+    "girder_length": 30.0,
+    "girder_top_offset": 0.0,
+    "girder_sample_step": 2.0
+  },
+  "pier": {
+    "pier_width": 2.0,
+    "cap_height": 1.5,
+    "footing_width": 6.0,
+    "footing_height": 1.5,
+    "embed_depth": 2.0
+  },
+  "bridge_layer_colors": {
+    "BRIDGE_GIRDER": 4,
+    "BRIDGE_ABUTMENT": 1,
+    "BRIDGE_PIER": 1
+  },
+  "label": {
+    "station_prefix": "STA.",
+    "text_height": 3.0,
+    "color": 1,
+    "line_margin": 3.0,
+    "bridge_type": "PSC"
+  },
+  "tunnel": {
+    "bottom_offset": 2.0,
+    "body_height": 9.0,
+    "sample_step": 2.0,
+    "color": 5,
+    "lining_thickness": 0.2
+  },
+  "portal": {
+    "sl_height": 1.0,
+    "portal_length": 20.0,
+    "slope": 1.5,
+    "color": 6
+  },
+  "plan": {
+    "bridge_nominal_span": 30.0,
+    "bridge_abutment_plan_dxf": "assets/test/cad/교대일반도.dxf",
+    "labels_enabled": true,
+    "pier": {
+      "column_diameter": 3.0,
+      "coping_width": 6.0,
+      "coping_length": 6.0,
+      "foundation_width": 9.0,
+      "foundation_length": 9.0
+    },
+    "label": {
+      "offset": 15.0,
+      "height": 3.0,
+      "layer": "STRUCTURE_LABEL_PLAN",
+      "color": 1
+    }
+  }
+}
