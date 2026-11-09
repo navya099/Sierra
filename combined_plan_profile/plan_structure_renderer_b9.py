@@ -30,7 +30,7 @@ def _position(s, points, distances):
     return ((a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t),((b[0]-a[0])/d,(b[1]-a[1])/d))
 
 
-def build_structure_cache(structures,points,distances,station_origin,settings_path):
+def build_structure_cache(structures,points,distances,station_origin,settings_path,*,label_style=None,horizontal_scale=1000.):
     """Generate source XY entities only once, independent of number of sheets."""
     cfg=json.loads(Path(settings_path).read_text(encoding='utf-8')) if settings_path else {}
     plan=cfg.get('plan',{})
@@ -60,8 +60,34 @@ def build_structure_cache(structures,points,distances,station_origin,settings_pa
             # Built-in portal may exceed total FL extents; skip only if unsupported.
             try: draw_plan_portals(msp,structures,portal,sl_width=portal.sl_width,**kw)
             except ValueError as exc: print(f'[B.9] 기본 갱문 생략: {exc}',flush=True)
-    if plan.get('labels_enabled',True):
-        draw_plan_structure_labels(msp,structures,PlanLabelSettings(**plan.get('label',{})),LabelSettings(**cfg.get('label',{})),**kw)
+    enabled = plan.get('labels_enabled', True)
+    if isinstance(label_style, dict):
+        enabled = enabled and label_style.get('enabled', True)
+    if enabled:
+        plan_label = PlanLabelSettings(**plan.get('label',{}))
+        if label_style is not None:
+            # Source geometry uses metres; render_structure_sheet() scales TEXT height
+            # by (1000 / H). Convert desired preset paper-mm height back to metres.
+            if not math.isfinite(horizontal_scale) or horizontal_scale <= 0:
+                raise ValueError('평면 주석 축척은 양수여야 합니다.')
+            from dataclasses import replace
+            if isinstance(label_style, dict):
+                # FIX3: schema-v2 plan style is a mapping, not ProfileLabelStyle.
+                paper_height = label_style['text']['height']
+                plan_label = replace(plan_label,
+                                     height=paper_height * horizontal_scale / 1000.,
+                                     color=label_style['text']['color'],
+                                     offset=label_style['placement']['offset'],
+                                     layer=label_style['layer'])
+            else:
+                paper_height = label_style.text_height
+                plan_label = replace(plan_label,
+                                     height=paper_height * horizontal_scale / 1000.,
+                                     color=label_style.color)
+            print(f'[G1-2D-4 평면 주석] H{horizontal_scale:g}; 출력 문자={paper_height:g}, '
+                  f'원본 문자={plan_label.height:g}, 색상={plan_label.color}, '
+                  f'이격={plan_label.offset:g}m',flush=True)
+        draw_plan_structure_labels(msp,structures,plan_label,LabelSettings(**cfg.get('label',{})),**kw)
     print(f'[B.9] 원본 평면 구조물 객체 {len(msp)}개 생성',flush=True)
     return doc
 

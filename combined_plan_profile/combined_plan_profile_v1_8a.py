@@ -26,12 +26,16 @@ from .vertical_curve_inputs_b11 import load_simple_vertical_curves
 from datetime import datetime
 from time import perf_counter
 
-def _prepare_plan_context(plan, structures, structure_settings_json, station_origin):
+def _prepare_plan_context(plan, structures, structure_settings_json, station_origin, *,
+                          label_style=None, horizontal_scale=1000.):
     t0=perf_counter()
     source_doc=ezdxf.readfile(str(plan))
     fl_points, fl_distances = read_alignment(plan)
     print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
-    plan_structure_cache = build_structure_cache(structures, fl_points, fl_distances, station_origin, structure_settings_json) if structures else None
+    plan_structure_cache = build_structure_cache(
+        structures, fl_points, fl_distances, station_origin, structure_settings_json,
+        label_style=label_style, horizontal_scale=horizontal_scale
+    ) if structures else None
     # Project source station annotations only once; reuse across all sheets.
     t0=perf_counter()
     station_cache={}
@@ -84,6 +88,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
     # G1-2D-3: import ONLY the S3-D9 structure annotation style.
     # Never replace combined-sheet origins, band heights, datum or plot limits.
+    plan_label_style = None
     if structures:
         if structure_label_preset:
             source_preset = load_preset_file(structure_label_preset, expected_mode='cad',
@@ -97,6 +102,13 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         label_style = ProfileLabelStyle.from_preset(style_config)
         label_style.validate()
         structure_kwargs['structure_label_style'] = label_style
+        # The optional plan-specific section overrides the shared legacy style.
+        # Use the validated source JSON (runtime drawing preset only exposes profile style).
+        plan_label_style = source_preset.get('layout', {}).get('annotations', {}).get('plan_structure_label')
+        if plan_label_style is None:
+            plan_label_style = label_style  # legacy schema v2 fallback
+        else:
+            print('[G1-2D-4-FIX2] 독립 평면 주석 프리셋 사용', flush=True)
         print(f'[G1-2D-3 프리셋] {source_preset["name"]} H{horizontal_scale:g}/V{vertical_scale:g}; '
               f'문자={label_style.text_height:g}, 인출선={label_style.vertical_height:g}, '
               f'각도={label_style.leader_angle:g}', flush=True)
@@ -129,7 +141,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
     source_doc, fl_points, fl_distances, plan_structure_cache, station_cache = (
         _prepare_plan_context(
-            plan, structures, structure_settings_json, station_origin
+            plan, structures, structure_settings_json, station_origin,
+            label_style=plan_label_style, horizontal_scale=horizontal_scale
         )
     )
     def render_plan(doc,a,b,index,transform,angle):

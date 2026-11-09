@@ -98,12 +98,34 @@ def validate_layout_v2(layout):
             raise ValueError('structure_label.text.color: ACI 1..255 required')
         if not 0 <= structure['text']['rotation'] <= 360 or not 0 <= structure['leader']['angle'] < 90:
             raise ValueError('structure_label: invalid angle')
+    # G1-2D-4-FIX2: optional, independent plan annotation settings.
+    plan_structure = layout['annotations'].get('plan_structure_label')
+    if plan_structure is not None:
+        _object(plan_structure, ('enabled', 'text', 'placement', 'layer'),
+                'layout.annotations.plan_structure_label')
+        if type(plan_structure['enabled']) is not bool:
+            raise ValueError('plan_structure_label.enabled: boolean required')
+        _object(plan_structure['text'], ('height', 'color'), 'plan_structure_label.text')
+        _num(plan_structure['text']['height'], 'plan_structure_label.text.height')
+        color = plan_structure['text']['color']
+        if type(color) is not int or not 1 <= color <= 255:
+            raise ValueError('plan_structure_label.text.color: ACI 1..255 required')
+        _object(plan_structure['placement'], ('offset',), 'plan_structure_label.placement')
+        offset = plan_structure['placement']['offset']
+        if type(offset) not in (int, float) or not math.isfinite(offset):
+            raise ValueError('plan_structure_label.placement.offset: finite number required')
+        layer = plan_structure['layer']
+        if (not isinstance(layer, str) or not layer.strip() or len(layer) > 255
+                or any(c in layer for c in '<>/\\":;?*|=,')):
+            raise ValueError('plan_structure_label.layer: invalid DXF layer name')
     for group, subgroups in LAYOUT_FIELDS.items():
         expected_groups = tuple(subgroups) + (('alignment',) if group == 'band' and 'alignment' in layout[group] else ())
         if group == 'annotations' and 'alignment' in layout['band']:
             expected_groups = tuple(k for k in expected_groups if k != 'alignment') if 'alignment' not in layout[group] else expected_groups
         if group == 'annotations' and structure is not None:
             expected_groups += ('structure_label',)
+        if group == 'annotations' and plan_structure is not None:
+            expected_groups += ('plan_structure_label',)
         _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
             if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:

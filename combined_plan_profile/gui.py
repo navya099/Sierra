@@ -184,6 +184,7 @@ class CombinedPlanProfileWindow(tk.Toplevel):
             girder = editor.girder_settings()
             pier = editor.pier_settings()
             label = editor.label_settings()
+            plan_label = editor.plan_label_settings()
             tunnel = editor.tunnel_settings()
             if tunnel.portal is None:
                 raise ValueError('현재 엔진의 설정 JSON 로더는 갱문 비활성화를 지원하지 않습니다. 자동 설정을 해제하고 수동 JSON을 사용하거나 갱문을 활성화하세요.')
@@ -216,6 +217,8 @@ class CombinedPlanProfileWindow(tk.Toplevel):
                     'bridge_abutment_plan_dxf': str(abutment_path),
                     'bridge_section': asdict(plan_section),
                     'pier': asdict(plan_pier),
+                    'labels_enabled': plan_label is not None,
+                    'label': asdict(plan_label) if plan_label is not None else {},
                 },
                 'girder': asdict(girder),
                 'pier': asdict(pier),
