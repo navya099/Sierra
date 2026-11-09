@@ -182,10 +182,20 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     )
     def render_plan(doc,a,b,index,transform,angle):
         t0=perf_counter()
+        # REG1-FIX2: CAD H1000 기준 평면 영역을 축척에 맞게 확대
+        frame_factor = horizontal_scale / 1000.0
+        plan_rect = (
+            70.0 * frame_factor,
+            330.0 * frame_factor,
+            770.0 * frame_factor,
+            530.0 * frame_factor,
+        )
+
         plan_counts=render_plan_entities(source_doc,doc,transform,angle,horizontal_scale,
                              sheet_start=a,sheet_end=b,fl_points=fl_points,
                              fl_distances=fl_distances,station_origin=station_origin,station_cache=station_cache,
-                             layers=tuple(x for x in DEFAULT_LAYERS if x.casefold() not in ('ip교점선','ip문자')))
+                             layers=tuple(x for x in DEFAULT_LAYERS if x.casefold() not in ('ip교점선','ip문자')),
+                             plan_rect=plan_rect)
         print(f"[곡선제원/인출선] {index}시트: { {k:v for k,v in plan_counts.items() if k.startswith('curve_')} }",flush=True)
         print(f"[성능] {index}시트 PLAN 객체: {perf_counter()-t0:.2f}초",flush=True)
         t0=perf_counter()
@@ -196,8 +206,15 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         t0=perf_counter()
         ip_labels=render_ip_labels(source_doc,doc,transform,angle,horizontal_scale)
         print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
-        vip_count=render_plan_vips(doc,vip,transform,sheet_start=a,sheet_end=b,
-                        fl_points=fl_points,fl_distances=fl_distances,station_origin=station_origin)
+        vip_count = render_plan_vips(
+            doc, vip, transform,
+            sheet_start=a,
+            sheet_end=b,
+            fl_points=fl_points,
+            fl_distances=fl_distances,
+            station_origin=station_origin,
+            plan_rect=plan_rect,
+        )
         print(f"[평면 VIP/구배] {index}시트: {vip_count}개",flush=True)
         if plan_structure_cache is not None:
             result=render_structure_sheet(doc,plan_structure_cache,transform,a,b,station_origin,fl_points,fl_distances)

@@ -14,21 +14,27 @@ def fmt_grade(v):
     if display in ('0.0', '-0.0'): return '0'
     return display.rstrip('0').rstrip('.')
 
-def _inside(p):
-    return PLAN_RECT[0] <= p[0] <= PLAN_RECT[2] and PLAN_RECT[1] <= p[1] <= PLAN_RECT[3]
+#REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+def _inside(p, rect):
+    return (
+        rect[0] <= p[0] <= rect[2]
+        and rect[1] <= p[1] <= rect[3]
+    )
 
-def _line(msp, a, b, layer):
-    segment = clip(a, b, PLAN_RECT)
+#REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+def _line(msp, a, b, layer, rect):
+    segment = clip(a, b, rect)
     if segment and math.dist(*segment) > 1e-8:
-        msp.add_line(*segment, dxfattribs={'layer':layer})
+        msp.add_line(*segment, dxfattribs={'layer': layer})
 
-def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=3.):
+def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=3., plan_rect=PLAN_RECT):
     """Identical local geometry/labels to final_plan_vip.draw_symbol, in paper mm."""
     tx, ty = tangent
     nx, ny = -ty, tx
     def tr(x, y): return (xy[0]+tx*x+nx*y, xy[1]+ty*x+ny*y)
     pivot = (0., stem)
-    _line(msp, tr(0, 0), tr(*pivot), 'PLAN_VIP_LINE')
+    # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+    _line(msp, tr(0, 0), tr(*pivot), 'PLAN_VIP_LINE', plan_rect)
     for grade, side in ((grade_in, 'IN'), (grade_out, 'OUT')):
         angle = math.radians(30 if grade > 1e-8 else -30 if grade < -1e-8 else 0)
         vx, vy = arm*math.cos(angle), arm*math.sin(angle)
@@ -39,9 +45,11 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
             start = pivot; end = (vx, stem+vy)
             ux, uy = math.cos(angle), math.sin(angle)
             text_xy = (vx-0.65*ux-0.65*uy, stem+vy-0.65*uy+0.65*ux)
-        _line(msp, tr(*start), tr(*end), f'PLAN_GRADE_{side}_LINE')
+        # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+        _line(msp, tr(*start), tr(*end), f'PLAN_GRADE_{side}_LINE', plan_rect)
         text_pos = tr(*text_xy)
-        if not _inside(text_pos): continue
+        # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+        if not _inside(text_pos, plan_rect):continue
         rotation = (math.degrees(math.atan2(ty, tx))+math.degrees(angle)) % 360
         label = msp.add_text(fmt_grade(grade), dxfattribs={
             'layer':f'PLAN_GRADE_{side}_TEXT', 'height':text_height, 'rotation':rotation})
@@ -52,7 +60,7 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
 
 def render_plan_vips(target_doc, vips, transform, *, sheet_start, sheet_end,
                      fl_points, fl_distances, station_origin=0.,
-                     stem=30., arm=10.5, text_height=3.):
+                     stem=30., arm=10.5, text_height=3., plan_rect=PLAN_RECT):
     """Assign boundary VIP to following sheet; omit end-of-route endpoint."""
     for name in LAYERS:
         if name not in target_doc.layers:
@@ -67,7 +75,8 @@ def render_plan_vips(target_doc, vips, transform, *, sheet_start, sheet_end,
             raise ValueError(f'VIP STA {vip.sta:.3f} outside PLAN FL range')
         p = position_at(distance, fl_points, fl_distances)
         xy = transform(p)
-        if not _inside(xy): continue
+        # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
+        if not _inside(xy, plan_rect):continue
         # Transform a unit tangent, so symbol follows sheet rotation and not raw DXF angle.
         from bisect import bisect_right
         i = max(0, min(bisect_right(fl_distances, distance)-1, len(fl_points)-2))
@@ -76,7 +85,8 @@ def render_plan_vips(target_doc, vips, transform, *, sheet_start, sheet_end,
         length = math.dist(xy, tangent_end)
         if length < 1e-10: raise ValueError('Degenerate transformed FL tangent')
         tangent = ((tangent_end[0]-xy[0])/length, (tangent_end[1]-xy[1])/length)
+        # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
         draw_symbol(msp, xy, tangent, vip.gradient_in, vip.gradient_out,
-                    stem=stem, arm=arm, text_height=text_height)
+                    stem=stem, arm=arm, text_height=text_height, plan_rect=plan_rect)
         count += 1
     return count

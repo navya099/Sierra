@@ -6,9 +6,10 @@ import re
 from .plan_ip_lines_v1_8a import _clip_halfplane, _tangent_at
 from .combined_plan_profile_v1_7_core import position_at
 from ezdxf import bbox
-from .combined_plan_profile_v1_6_core import PLAN_RECT, clip
+from .combined_plan_profile_v1_7_core import PLAN_RECT, clip
+# REG1_DYNAMIC_PLAN_RECT: use scale-aware plan frame for annotations
 
-DEFAULT_LAYERS = ('km심볼','200심볼','km문자','200문자','보조측점','곡선인출선','곡선제원문자','IP교점선','IP문자')
+DEFAULT_LAYERS = ('km심볼','200심볼','보조심볼','km문자','200문자','보조문자','보조측점','곡선인출선','곡선제원문자','IP교점선','IP문자')
 
 def _inside(p, rect=PLAN_RECT, margin=0):
     return rect[0]+margin <= p[0] <= rect[2]-margin and rect[1]+margin <= p[1] <= rect[3]-margin
@@ -52,13 +53,21 @@ def _sheet_matchlines(transform, sheet_start, sheet_end, points, distances, orig
 
 def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizontal_scale,
                          layers=DEFAULT_LAYERS, *, sheet_start=None, sheet_end=None,
-                         fl_points=None, fl_distances=None, station_origin=0., station_cache=None):
+                         fl_points=None, fl_distances=None, station_origin=0., station_cache=None, plan_rect=None):
     """Transform selected DXF modelspace entities; clip LINE, reject out-of-frame labels/symbols.
     Source entities in IP_Block_* are deliberately excluded: their absolute block coordinates
     and zero insertion require a separate safe block handler.
     """
     src=source_doc.modelspace(); dst=target_doc.modelspace()
-    k=1000.0/horizontal_scale
+    # REG1-FIX2-A
+    # CAD 1:1 좌표계에서 원본 주석 크기 유지
+    k = 1.0
+    # FIX2-1 uses an enlarged sheet frame in CAD mode. Use its effective
+    # plan area, not the legacy fixed H1000 rectangle, for annotation clipping.
+    # Caller can supply exact frame; otherwise infer from sheet scale.
+    if plan_rect is None:
+        factor = horizontal_scale / 1000.0
+        plan_rect = tuple(v * factor for v in PLAN_RECT)
     counts={'LINE':0,'TEXT':0,'MTEXT':0,'CIRCLE':0,'skipped':0, 'curve_text_station_excluded':0, 'curve_text_frame_excluded':0, 'curve_leader_station_excluded':0, 'curve_leader_matchline_clipped':0, 'curve_leader_drawn':0}
     selected={name.casefold() for name in layers}
     matchlines = (_sheet_matchlines(transform,sheet_start,sheet_end,fl_points,fl_distances,station_origin)
@@ -74,7 +83,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
         if e.dxf.hasattr('color'): attrs['color']=e.dxf.color
         # v1.7.2: 1km/200m markers and text are selected by FL station,
         # not by their transformed location inside the PLAN frame.
-        station_layers = {'km심볼', '200심볼', 'km문자', '200문자'}
+        station_layers = {'km심볼', '200심볼', '보조심볼', 'km문자', '200문자', '보조문자'}
         if layer.casefold() in {name.casefold() for name in station_layers} and fl_points is not None:
             if typ == 'CIRCLE':
                 anchor = e.dxf.center
@@ -83,7 +92,22 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             else:
                 anchor = None
             if anchor is not None:
-                sta, offset = station_cache[e.dxf.handle] if station_cache is not None else _station_of_point(anchor, fl_points, fl_distances, station_origin)
+                cached = (
+                    station_cache.get(e.dxf.handle)
+                    if station_cache is not None
+                    else None
+                )
+
+                sta, offset = (
+                    cached
+                    if cached is not None
+                    else _station_of_point(
+                        anchor,
+                        fl_points,
+                        fl_distances,
+                        station_origin,
+                    )
+                )
                 if (sta is None or offset > 2.0 or
                     (sheet_start is not None and sta < sheet_start-1e-5) or
                     (sheet_end is not None and sta > sheet_end+1e-5)):
@@ -136,20 +160,20 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
                     continue
                 if math.dist(a,original[0])>1e-6 or math.dist(b,original[1])>1e-6:
                     counts['curve_leader_matchline_clipped']+=1
-            segment=clip(a,b,PLAN_RECT)
+            segment=clip(a,b,plan_rect)
             if segment and math.dist(*segment)>1e-8:
                 dst.add_line(*segment,dxfattribs=attrs);counts['LINE']+=1
                 if leader: counts['curve_leader_drawn']+=1
             else:counts['skipped']+=1
         elif typ=='CIRCLE':
             c=transform(e.dxf.center);r=e.dxf.radius*k
-            if _inside(c,margin=r):
+            if _inside(c,rect=plan_rect,margin=0):
                 dst.add_circle(c,r,dxfattribs=attrs);counts['CIRCLE']+=1
             else:counts['skipped']+=1
         elif typ=='TEXT':
             p=transform(e.dxf.insert)
             # Anchor-based filtering; text extents are not clipped in this version.
-            if _inside(p,margin=1) or layer.casefold() == '곡선제원문자'.casefold():
+            if _inside(p,rect=plan_rect,margin=0) or layer.casefold() == '곡선제원문자'.casefold():
                 attrs.update(insert=p,height=e.dxf.get('height',2.5)*k,
                              rotation=(e.dxf.get('rotation',0)-math.degrees(angle_rad))%360)
                 if e.dxf.hasattr('style') and e.dxf.style in target_doc.styles:attrs['style']=e.dxf.style
@@ -157,10 +181,10 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
                 created=dst.add_text(e.dxf.text,dxfattribs=attrs)
                 if layer.casefold() == '곡선제원문자'.casefold():
                     ext=bbox.extents([created],fast=True)
-                    if (not ext.has_data or ext.extmin.x < PLAN_RECT[0]-1e-6 or
-                        ext.extmin.y < PLAN_RECT[1]-1e-6 or
-                        ext.extmax.x > PLAN_RECT[2]+1e-6 or
-                        ext.extmax.y > PLAN_RECT[3]+1e-6):
+                    if (not ext.has_data or ext.extmin.x < plan_rect[0]-1e-6 or
+                        ext.extmin.y < plan_rect[1]-1e-6 or
+                        ext.extmax.x > plan_rect[2]+1e-6 or
+                        ext.extmax.y > plan_rect[3]+1e-6):
                         dst.delete_entity(created);counts['skipped']+=1
                         counts['curve_text_frame_excluded']+=1
                         continue
@@ -168,7 +192,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             else:counts['skipped']+=1
         elif typ=='MTEXT':
             p=transform(e.dxf.insert)
-            if _inside(p,margin=1):
+            if _inside(p,rect=plan_rect,margin=0):
                 attrs.update(insert=p,char_height=e.dxf.get('char_height',2.5)*k,
                              rotation=(e.dxf.get('rotation',0)-math.degrees(angle_rad))%360)
                 dst.add_mtext(e.text,dxfattribs=attrs);counts['MTEXT']+=1

@@ -8,6 +8,7 @@ from time import perf_counter
 import ezdxf
 from ezdxf.math import Vec2
 from .titleblock_attributes_v1_9a import update_titleblock
+from .sheet_policy import make_sheet_policy
 
 PLAN_RECT=(35.,330.,811.,530.)
 PROFILE_RECT=(35.,70.,811.,315.)
@@ -57,13 +58,14 @@ def clip(a,b,rect):
     return ((a[0]+dx*t0,a[1]+dy*t0),(a[0]+dx*t1,a[1]+dy*t1))
 
 def make_plan_matchline_polygon(sheet_start, sheet_end, station_origin, pts, ds, transform,
-                                rect=PLAN_RECT, *, min_longitudinal_component=0.12):
+                                rect=None, *, min_longitudinal_component=0.12):
     """Keep top/bottom frame horizontal; replace vertical sides with FL-normal matchlines.
 
     All geometry is in final sheet-paper coordinates. A near-horizontal matchline
     cannot intersect both horizontal edges reliably: fail rather than invent a frame.
     """
     from bisect import bisect_right
+    rect = PLAN_RECT if rect is None else rect
     ymin, ymax = rect[1], rect[3]
     mid_y = (ymin + ymax) / 2
     edges = []
@@ -92,9 +94,10 @@ def make_plan_matchline_polygon(sheet_start, sheet_end, station_origin, pts, ds,
     return polygon, edges
 
 
-def clip_to_plan_polygon(a, b, edges, rect=PLAN_RECT):
+def clip_to_plan_polygon(a, b, edges, rect=None):
     """Clip a segment to both horizontal bounds and both FL-normal station planes."""
     from .plan_ip_lines_v1_8a import _clip_halfplane
+    rect = PLAN_RECT if rect is None else rect
     segment = clip(a,b,(-1e12,rect[1],1e12,rect[3]))
     if segment is None: return None
     for (_,_,origin,tangent), keep_positive in zip(edges,(True,False)):
@@ -110,17 +113,20 @@ def sheet_ranges(start,end,length):
     if n>10000:raise ValueError("시트 10000장 초과")
     return [(start+i*length,min(end,start+(i+1)*length)) for i in range(n)]
 
-def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction="서울쪽", right_direction="부산쪽"):
+def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction="서울쪽", right_direction="부산쪽", *, plan_rect=None, profile_rect=None):
     """Draw titles and direction labels in sheet-paper millimetres (not source coordinates)."""
     from ezdxf.enums import TextEntityAlignment
     msp = doc.modelspace()
     layer = "ZPP_SHEET_ANNOTATION"
     if layer not in doc.layers:
         doc.layers.new(layer, dxfattribs={"color": 7})
-    for rect in (PLAN_RECT, PROFILE_RECT):
+    plan_rect = PLAN_RECT if plan_rect is None else plan_rect
+    profile_rect = PROFILE_RECT if profile_rect is None else profile_rect
+    factor = horizontal_scale / 1000.0
+    for rect in (plan_rect, profile_rect):
         x0, y0, x1, y1 = rect
         cx = (x0 + x1) / 2
-        if rect == PLAN_RECT:
+        if rect == plan_rect:
             title = f"평면도(S={horizontal_scale:,.0f})"
             msp.add_text(title, dxfattribs={"layer": layer, "height": 4.0}).set_placement(
                 (cx, y1 - 7.0), align=TextEntityAlignment.MIDDLE_CENTER)
@@ -136,7 +142,7 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
                 (scale_x, mid_y + 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
             msp.add_text(f" V={vertical_scale:,.0f})", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
                 (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
-        cy = (y0 + y1) / 2 + (75.0 if rect == PROFILE_RECT else 0.0)
+        cy = (y0 + y1) / 2 + (75.0 * factor if rect == profile_rect else 0.0)
         # Horizontal direction callouts inside each drawing frame.
         # Left:  ◀ [서울쪽] ; Right: [부산쪽] ▶
         # A SOLID triangular arrow uses ACI 7 (black on white CAD paper).
@@ -166,7 +172,7 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
         direction_callout(left_direction, True)
         direction_callout(right_direction, False)
 
-def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, angle):
+def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, angle, *, plan_rect=None, paper_factor=1.0):
     """B.13: sheet-paper annotations; north assumes source DXF +Y is grid north.
 
     Labels are inset from each oblique matchline, not tied to a vertical frame.
@@ -179,7 +185,8 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
         if layer not in doc.layers:
             doc.layers.new(layer, dxfattribs={"color": 7})
 
-    ymin, ymax = PLAN_RECT[1], PLAN_RECT[3]
+    plan_rect = PLAN_RECT if plan_rect is None else plan_rect
+    ymin, ymax = plan_rect[1], plan_rect[3]
     # Matchline labels are placed OUTSIDE each slanted polygon edge.
     # Rotation follows the boundary itself (not the plan alignment).
     label_y = (ymin + ymax) / 2.0  # B.15: matchline label at polygon vertical midpoint
@@ -246,12 +253,21 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     results=[]
     ranges=sheet_ranges(start,end,sheet_length)
+    # FIX2-1: scaled template, sheet rectangles and paper annotations; CAD FL remains 1:1.
+    policy = make_sheet_policy(horizontal_scale, vertical_scale, sheet_length) if drawing_mode is DrawingMode.CAD else None
+    plan_rect = policy.plan_rect if policy else PLAN_RECT
+    profile_rect = policy.profile_rect if policy else PROFILE_RECT
+    paper_factor = policy.paper_factor if policy else 1.0
     for number,(sa,sb) in enumerate(ranges,1):
         doc=ezdxf.readfile(str(template));msp=doc.modelspace();doc.header['$INSUNITS']=4
+        if paper_factor != 1.0:
+            from ezdxf.transform import inplace
+            from ezdxf.math import Matrix44
+            inplace(msp, Matrix44.scale(paper_factor, paper_factor, 1.0))
         for name,color in [('ZPP_PLAN_CENTER',1),('ZPP_PLAN_AREA',3),('ZPP_PROFILE_AREA',5)]:
             if name not in doc.layers:doc.layers.new(name,dxfattribs={'color':color})
         if guides:
-            x0,y0,x1,y1=PROFILE_RECT
+            x0,y0,x1,y1=profile_rect
             msp.add_lwpolyline([(x0,y0),(x1,y0),(x1,y1),(x0,y1)],close=True,
                 dxfattribs={'layer':'ZPP_PROFILE_AREA'})
         # 기준방향은 시트 시작~종료점 벡터. 기존 DXF 회전이 아닌 신규 좌표 계산
@@ -265,13 +281,13 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         else:angle=math.radians(float(rotation))
         ca,sa_s=math.cos(angle),math.sin(angle)
         anchor=pa  # 시트 시작 측점을 종단면도와 동일한 X=70mm에 배치
-        cx=70.;cy=(PLAN_RECT[1]+PLAN_RECT[3])/2
+        cx=70. * paper_factor;cy=(plan_rect[1]+plan_rect[3])/2
         scale=1.0 if drawing_mode is DrawingMode.CAD else 1000./horizontal_scale
         def transform(p):
             dx,dy=p[0]-anchor[0],p[1]-anchor[1]
             return (cx+(dx*ca+dy*sa_s)*scale,cy+(-dx*sa_s+dy*ca)*scale)
         polygon, matchline_edges = make_plan_matchline_polygon(
-            sa, sb, station_origin, pts, ds, transform)
+            sa, sb, station_origin, pts, ds, transform, rect=plan_rect)
         if guides:
             msp.add_lwpolyline(polygon, close=True,
                                dxfattribs={'layer':'ZPP_PLAN_AREA'})
@@ -282,7 +298,7 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         for a,b in zip(station_list,station_list[1:]):
             u=transform(position_at(a-station_origin,pts,ds))
             v=transform(position_at(b-station_origin,pts,ds))
-            clipped=clip_to_plan_polygon(u,v,matchline_edges)
+            clipped=clip_to_plan_polygon(u,v,matchline_edges,rect=plan_rect)
             if clipped and math.dist(*clipped)>1e-8:
                 # Use LWPOLYLINE, not LINE: AutoCAD Global Width is a polyline property.
                 msp.add_lwpolyline(clipped, dxfattribs={
@@ -293,8 +309,22 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
             plan_hook(doc, sa, sb, number, transform, angle)
         if profile_hook is not None:
             profile_hook(doc, sa, sb, number)
-        draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction, right_direction)
-        draw_matchline_and_north(doc, sa, sb, number, len(ranges), matchline_edges, angle)
+        before_annotations = set(e.dxf.handle for e in msp)
+        draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction, right_direction,
+                               plan_rect=plan_rect, profile_rect=profile_rect)
+        draw_matchline_and_north(doc, sa, sb, number, len(ranges), matchline_edges, angle,
+                                 plan_rect=plan_rect, paper_factor=paper_factor)
+        if paper_factor != 1.0:
+            # Only newly created paper annotations: scale around the origin, not CAD geometry.
+            from ezdxf.transform import inplace
+            from ezdxf.math import Matrix44
+            annotation_entities = [e for e in msp if e.dxf.handle not in before_annotations]
+            # Annotation positions were generated in scaled rectangles; only glyph/offset
+            # sizes need scaling. Do NOT transform coordinates here.
+            for e in annotation_entities:
+                if e.dxftype() in ("TEXT", "MTEXT"):
+                    if e.dxftype() == "TEXT": e.dxf.height *= paper_factor
+                    else: e.dxf.char_height *= paper_factor
         print(f"[B.13] {number}시트 Matchline 연결측점 및 정북 기호 배치", flush=True)
         updated = update_titleblock(doc, number=number, total=len(ranges),
             sheet_start=sa, sheet_end=sb, horizontal_scale=horizontal_scale,
