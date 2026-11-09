@@ -8,8 +8,15 @@ from pathlib import Path
 import math
 import ezdxf
 
+PROJECT_ROOT = Path(__file__).resolve().parent
 LAYER = 'BRIDGE_ABUTMENT_PLAN'
-DEFAULT_TEMPLATE = Path(__file__).with_name('교대일반도.dxf')
+DEFAULT_TEMPLATE = (
+    PROJECT_ROOT
+    / "assets"
+    / "test"
+    / "cad"
+    / "교대일반도.dxf"
+)
 
 
 def read_template(path):
