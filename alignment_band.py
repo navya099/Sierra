@@ -8,11 +8,16 @@ from alignment_reader import extract_with_stations
 
 
 def draw_alignment_band(msp, source, start, end, station_x, origin_y, text, line,
-                        alignment_settings=None):
+                        alignment_settings=None,  alignment_data=None): #P3-B
     source = Path(source).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f'평면선형 DXF가 없습니다: {source}')
-    result = extract_with_stations(source)
+    #P3-B
+    result = (
+        alignment_data
+        if alignment_data is not None
+        else extract_with_stations(source)
+    )
     ips = result['ips']
     # Preserve source chainage; never stretch/rebase horizontal data to vertical range.
     alignment_settings = alignment_settings or {}

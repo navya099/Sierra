@@ -30,6 +30,9 @@ from time import perf_counter
 # G1-2D-5-LOG1 filter
 import sys
 
+#P-3-B ADD extract_with_stations
+from alignment_reader import extract_with_stations
+
 class SierraLogFilter:
     DEBUG_PREFIXES = (
         "[성능]", "[FL GLOBAL_WIDTH]", "[곡선제원/인출선]",
@@ -184,11 +187,33 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     options=DrawingOptions(origin_x=35.,origin_y=70.,drawing_mode=DrawingMode.CAD,horizontal_scale=horizontal_scale,
         vertical_scale=vertical_scale,plot_lower_y=135.,plot_upper_y=235.,
         sheet_start_sta=start,sheet_end_sta=end,horizontal_alignment_dxf=str(Path(plan).resolve()),elevation_pole_solid=True,elevation_pole_labels=True,elevation_pole_at_datum_breaks=True)
+    # P3-B
+    if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
+        t0 = perf_counter()
+        alignment_data = extract_with_stations(options.horizontal_alignment_dxf)
+        print(
+            f"[성능] Alignment 공통 전처리: "
+            f"{perf_counter() - t0:.2f}초 "
+            f"(IP {alignment_data['ip_count']}개)",
+            flush=True,
+        )
+
     def render(doc,a,b,index):
         local=replace(options,sheet_start_sta=a,sheet_end_sta=b)
         t0=perf_counter()
-        create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
-                               local,vertical_curve_lengths=vc_lengths,structures=structures,target_doc=doc,**structure_kwargs)
+
+        #P3-B
+        create_profile_drawing(
+            profile,
+            Path(output_dir) / f"unused_{index}.dxf",
+            local,
+            vertical_curve_lengths=vc_lengths,
+            structures=structures,
+            target_doc=doc,
+            alignment_data=alignment_data,
+            **structure_kwargs,
+        )
+
         print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
     source_doc, fl_points, fl_distances, fl_global_width, plan_structure_cache, station_cache = (
         _prepare_plan_context(

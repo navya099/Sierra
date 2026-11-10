@@ -128,7 +128,8 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            pier_settings: PierSettings | None = None, bridge_layer_colors=None, label_settings: LabelSettings | None = None,
                            tunnel_settings: TunnelSettings | None = None,
                            target_doc=None,
-                           structure_label_style: ProfileLabelStyle | None = None) -> dict:
+                           structure_label_style: ProfileLabelStyle | None = None,
+                           alignment_data: dict | None = None) -> dict:
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
@@ -684,10 +685,13 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                   station_height, 'BAND_TEXT', rotation=station_rotation)
     alignment_info = {'curve_count': 0, 'curve_visible_count': 0, 'curve_source': None}
     if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
+        #P3-B
         alignment_info = draw_alignment_band(
             msp, options.horizontal_alignment_dxf, start, end,
             display_sta, layout.origin_y, _text, _line,
-            alignment_settings=alignment_settings)
+            alignment_settings=alignment_settings,
+            alignment_data=alignment_data,
+        )
     # No internal vertical lines in the band: user-approved cleanup.
 
     circle_stations = sorted(p.sta for p in vip
