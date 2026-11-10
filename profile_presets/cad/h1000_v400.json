@@ -180,16 +180,62 @@
         }
       },
       "plan_structure_label": {
-  "enabled": true,
-  "text": {
-    "height": 3.0,
-    "color": 1
-  },
-  "placement": {
-    "offset": 15.0
-  },
-  "layer": "STRUCTURE_LABEL_PLAN"
-}
+        "enabled": true,
+        "text": {
+          "height": 3.0,
+          "color": 1
+        },
+        "placement": {
+          "offset": 15.0
+        },
+        "layer": "STRUCTURE_LABEL_PLAN"
+      },
+      "plan": {
+        "station": {
+          "km": {
+            "enabled": true,
+            "interval": 1000,
+            "text": {
+              "height": 3.0,
+              "color": null
+            },
+            "symbol": {
+              "radius": 2.0,
+              "color": null
+            }
+          },
+          "main": {
+            "enabled": true,
+            "interval": 200,
+            "text": {
+              "height": 3.0,
+              "color": null
+            },
+            "symbol": {
+              "radius": 1.5,
+              "color": null
+            }
+          },
+          "tick": {
+            "enabled": true,
+            "interval": 20,
+            "length": 3.0,
+            "color": null
+          }
+        },
+        "vip": {
+          "enabled": true,
+          "text": {
+            "height": 3.0,
+            "color": 1
+          },
+          "leader": {
+            "stem_length": 30.0,
+            "arm_length": 10.5,
+            "color": 1
+          }
+        }
+      }
     }
   },
   "visibility": {

@@ -178,6 +178,52 @@
           "angle": 30.0,
           "margin": 3.0
         }
+      },
+      "plan": {
+        "station": {
+          "km": {
+            "enabled": true,
+            "interval": 1000,
+            "text": {
+              "height": 15.0,
+              "color": null
+            },
+            "symbol": {
+              "radius": 10.0,
+              "color": null
+            }
+          },
+          "main": {
+            "enabled": true,
+            "interval": 200,
+            "text": {
+              "height": 15.0,
+              "color": null
+            },
+            "symbol": {
+              "radius": 7.5,
+              "color": null
+            }
+          },
+          "tick": {
+            "enabled": true,
+            "interval": 40,
+            "length": 15.0,
+            "color": null
+          }
+        },
+        "vip": {
+          "enabled": true,
+          "text": {
+            "height": 15.0,
+            "color": 1
+          },
+          "leader": {
+            "stem_length": 150.0,
+            "arm_length": 52.5,
+            "color": 1
+          }
+        }
       }
     }
   },

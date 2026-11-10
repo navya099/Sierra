@@ -118,6 +118,50 @@ def validate_layout_v2(layout):
         if (not isinstance(layer, str) or not layer.strip() or len(layer) > 255
                 or any(c in layer for c in '<>/\\":;?*|=,')):
             raise ValueError('plan_structure_label.layer: invalid DXF layer name')
+    # REG2-2-A: optional independent PLAN annotation group.
+    plan = layout['annotations'].get('plan')
+    if plan is not None:
+        _object(plan, ('station', 'vip'), 'layout.annotations.plan')
+        station = plan['station']
+        _object(station, ('km', 'main', 'tick'), 'layout.annotations.plan.station')
+        for kind in ('km', 'main'):
+            item = station[kind]
+            prefix = 'layout.annotations.plan.station.' + kind
+            _object(item, ('enabled', 'interval', 'text', 'symbol'), prefix)
+            if type(item['enabled']) is not bool:
+                raise ValueError(prefix + '.enabled: boolean required')
+            _num(item['interval'], prefix + '.interval')
+            _object(item['text'], ('height', 'color'), prefix + '.text')
+            _object(item['symbol'], ('radius', 'color'), prefix + '.symbol')
+            _num(item['text']['height'], prefix + '.text.height')
+            _num(item['symbol']['radius'], prefix + '.symbol.radius')
+            for color_path, color in ((prefix + '.text.color', item['text']['color']),
+                                      (prefix + '.symbol.color', item['symbol']['color'])):
+                if color is not None and (type(color) is not int or not 1 <= color <= 255):
+                    raise ValueError(color_path + ': null or ACI 1..255 required')
+        tick = station['tick']
+        prefix = 'layout.annotations.plan.station.tick'
+        _object(tick, ('enabled', 'interval', 'length', 'color'), prefix)
+        if type(tick['enabled']) is not bool:
+            raise ValueError(prefix + '.enabled: boolean required')
+        _num(tick['interval'], prefix + '.interval')
+        _num(tick['length'], prefix + '.length')
+        if tick['color'] is not None and (type(tick['color']) is not int or not 1 <= tick['color'] <= 255):
+            raise ValueError(prefix + '.color: null or ACI 1..255 required')
+        vip_plan = plan['vip']
+        prefix = 'layout.annotations.plan.vip'
+        _object(vip_plan, ('enabled', 'text', 'leader'), prefix)
+        if type(vip_plan['enabled']) is not bool:
+            raise ValueError(prefix + '.enabled: boolean required')
+        _object(vip_plan['text'], ('height', 'color'), prefix + '.text')
+        _object(vip_plan['leader'], ('stem_length', 'arm_length', 'color'), prefix + '.leader')
+        _num(vip_plan['text']['height'], prefix + '.text.height')
+        _num(vip_plan['leader']['stem_length'], prefix + '.leader.stem_length')
+        _num(vip_plan['leader']['arm_length'], prefix + '.leader.arm_length')
+        for color_path, color in ((prefix + '.text.color', vip_plan['text']['color']),
+                                  (prefix + '.leader.color', vip_plan['leader']['color'])):
+            if type(color) is not int or not 1 <= color <= 255:
+                raise ValueError(color_path + ': ACI 1..255 required')
     for group, subgroups in LAYOUT_FIELDS.items():
         expected_groups = tuple(subgroups) + (('alignment',) if group == 'band' and 'alignment' in layout[group] else ())
         if group == 'annotations' and 'alignment' in layout['band']:
@@ -126,6 +170,8 @@ def validate_layout_v2(layout):
             expected_groups += ('structure_label',)
         if group == 'annotations' and plan_structure is not None:
             expected_groups += ('plan_structure_label',)
+        if group == 'annotations' and plan is not None:
+            expected_groups += ('plan',)
         _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
             if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:
