@@ -9,6 +9,7 @@ from profile_drawing import create_profile_drawing, DrawingOptions
 from profile_transform import DrawingMode
 from profile_presets.loader import load_preset, load_preset_file
 from profile_presets.runtime import to_drawing_preset
+from profile_presets.plan_annotation_style import plan_style_from_preset
 from structure_label import ProfileLabelStyle
 from profile_calculator import read_ground_points
 from dxf_reader import extract_profile
@@ -65,7 +66,11 @@ def _prepare_plan_context(plan, structures, structure_settings_json, station_ori
                           label_style=None, horizontal_scale=1000.):
     t0=perf_counter()
     source_doc=ezdxf.readfile(str(plan))
-    fl_points, fl_distances = read_alignment(plan)
+    from plan_geometry import read_fl
+    fl_points, fl_distances = read_fl(source_doc)
+    fl_ents = [e for e in source_doc.modelspace().query('LWPOLYLINE')
+               if e.dxf.layer.casefold() == 'fl']
+    fl_global_width = float(fl_ents[0].dxf.get('const_width', 0.0))
     print(f"[성능] PLAN 원본 읽기+FL: {perf_counter()-t0:.2f}초",flush=True)
     plan_structure_cache = build_structure_cache(
         structures, fl_points, fl_distances, station_origin, structure_settings_json,
@@ -73,20 +78,27 @@ def _prepare_plan_context(plan, structures, structure_settings_json, station_ori
     ) if structures else None
     # Project source station annotations only once; reuse across all sheets.
     t0=perf_counter()
+    from plan_station_index import FLStationIndex
+    station_index=FLStationIndex(fl_points,fl_distances,station_origin)
     station_cache={}
-    station_layers={'km심볼','200심볼','km문자','200문자','보조측점'}
+    station_layers={'km심볼','200심볼','km문자','200문자','보조측점','보조심볼','보조문자','곡선인출선'}
     for ent in source_doc.modelspace():
         layer=ent.dxf.layer.casefold()
         if layer not in station_layers: continue
         typ=ent.dxftype()
-        if layer=='보조측점' and typ=='LINE':
+        if layer=='곡선인출선' and typ=='LINE':
+            sta0, offset0 = station_index.project(ent.dxf.start)
+            sta1, offset1 = station_index.project(ent.dxf.end)
+            station_cache[ent.dxf.handle] = ((sta0, offset0) if offset0 <= offset1 else (sta1, offset1))
+            continue
+        elif layer=='보조측점' and typ=='LINE':
             anchor=((ent.dxf.start.x+ent.dxf.end.x)/2,(ent.dxf.start.y+ent.dxf.end.y)/2)
         elif typ=='CIRCLE': anchor=ent.dxf.center
         elif typ in ('TEXT','MTEXT'): anchor=ent.dxf.insert
         else: continue
-        station_cache[ent.dxf.handle]=_station_of_point(anchor,fl_points,fl_distances,station_origin)
+        station_cache[ent.dxf.handle]=station_index.project(anchor)
     print(f"[성능] PLAN 측점 캐시: {len(station_cache)}개 / {perf_counter()-t0:.2f}초",flush=True)
-    return source_doc, fl_points, fl_distances, plan_structure_cache, station_cache
+    return source_doc, fl_points, fl_distances, fl_global_width, plan_structure_cache, station_cache
 
 def _prepare_vertical_curves(
     vip, vertical_curve_csv, vertical_curve_sta_json,
@@ -123,13 +135,16 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
     # G1-2D-3: import ONLY the S3-D9 structure annotation style.
     # Never replace combined-sheet origins, band heights, datum or plot limits.
+    # REG2-2-C: Load CAD preset and plan annotation style independently of structures.
+    if structure_label_preset:
+        source_preset = load_preset_file(structure_label_preset, expected_mode='cad',
+                                         expected_scales=(horizontal_scale, vertical_scale))
+    else:
+        source_preset = load_preset('cad', horizontal_scale, vertical_scale)
+    plan_annotation_style = plan_style_from_preset(source_preset)
+    # REG2-2-D will pass plan_annotation_style to plan renderers.
     plan_label_style = None
     if structures:
-        if structure_label_preset:
-            source_preset = load_preset_file(structure_label_preset, expected_mode='cad',
-                                             expected_scales=(horizontal_scale, vertical_scale))
-        else:
-            source_preset = load_preset('cad', horizontal_scale, vertical_scale)
         drawing_preset = to_drawing_preset(source_preset)
         style_config = drawing_preset.get('_s3d8_structure_label')
         if style_config is None:
@@ -163,7 +178,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     hi=min(ground[-1][0],vip[-1].sta)
     # PLAN측점과 PROFILE측점이 일치하도록 교집합 적용
     start=max(lo,station_origin) if start_sta is None else start_sta
-    end=min(hi,station_origin+read_plan_length(plan)) if end_sta is None else end_sta
+    # PERF1-B: FL length is available from the shared PLAN context below.
+    end=hi if end_sta is None else end_sta
     if start<lo or end>hi:raise ValueError("PROFILE 범위를 벗어나는 측점")
     options=DrawingOptions(origin_x=35.,origin_y=70.,drawing_mode=DrawingMode.CAD,horizontal_scale=horizontal_scale,
         vertical_scale=vertical_scale,plot_lower_y=135.,plot_upper_y=235.,
@@ -174,12 +190,26 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         create_profile_drawing(profile,Path(output_dir)/f"unused_{index}.dxf",
                                local,vertical_curve_lengths=vc_lengths,structures=structures,target_doc=doc,**structure_kwargs)
         print(f"[성능] {index}시트 PROFILE 작도: {perf_counter()-t0:.2f}초",flush=True)
-    source_doc, fl_points, fl_distances, plan_structure_cache, station_cache = (
+    source_doc, fl_points, fl_distances, fl_global_width, plan_structure_cache, station_cache = (
         _prepare_plan_context(
             plan, structures, structure_settings_json, station_origin,
             label_style=plan_label_style, horizontal_scale=horizontal_scale
         )
     )
+    if end_sta is None:
+        end=min(end,station_origin+fl_distances[-1])
+    if start >= end:
+        raise ValueError('PLAN/PROFILE 공통 측점 범위가 비어 있습니다')
+    prepared_plan=(fl_points,fl_distances,fl_global_width)
+    # PERF1-D1: preselect source annotations once; preserve modelspace ordering.
+    # Station filtering and clipping remain unchanged inside the renderer.
+    _annotation_layers={name.casefold() for name in DEFAULT_LAYERS
+                        if name.casefold() not in ('ip교점선','ip문자')}
+    source_annotation_entities=tuple(
+        ent for ent in source_doc.modelspace()
+        if ent.dxf.get('layer','0').casefold() in _annotation_layers
+    )
+    print(f'[성능] PLAN 주석 사전 분류: {len(source_annotation_entities)}개',flush=True)
     def render_plan(doc,a,b,index,transform,angle):
         t0=perf_counter()
         # REG1-FIX2: CAD H1000 기준 평면 영역을 축척에 맞게 확대
@@ -195,7 +225,7 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
                              sheet_start=a,sheet_end=b,fl_points=fl_points,
                              fl_distances=fl_distances,station_origin=station_origin,station_cache=station_cache,
                              layers=tuple(x for x in DEFAULT_LAYERS if x.casefold() not in ('ip교점선','ip문자')),
-                             plan_rect=plan_rect)
+                             plan_rect=plan_rect, plan_style=plan_annotation_style,source_entities=source_annotation_entities)
         print(f"[곡선제원/인출선] {index}시트: { {k:v for k,v in plan_counts.items() if k.startswith('curve_')} }",flush=True)
         print(f"[성능] {index}시트 PLAN 객체: {perf_counter()-t0:.2f}초",flush=True)
         t0=perf_counter()
@@ -206,6 +236,10 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         t0=perf_counter()
         ip_labels=render_ip_labels(source_doc,doc,transform,angle,horizontal_scale)
         print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
+
+        #REG2
+        vip_scale = horizontal_scale / 1000.0
+
         vip_count = render_plan_vips(
             doc, vip, transform,
             sheet_start=a,
@@ -213,6 +247,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
             fl_points=fl_points,
             fl_distances=fl_distances,
             station_origin=station_origin,
+            stem=30.0 * vip_scale,
+            arm=10.5 * vip_scale,
+            text_height=3.0 * vip_scale,
             plan_rect=plan_rect,
         )
         print(f"[평면 VIP/구배] {index}시트: {vip_count}개",flush=True)
@@ -225,7 +262,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
          project_name=project_name,route_name=route_name,titleblock_config=titleblock_config,
          profile_hook=render,plan_hook=render_plan,
          left_direction=left_direction,right_direction=right_direction,
-         drawing_mode=DrawingMode.CAD)
+         drawing_mode=DrawingMode.CAD,
+         prepared_plan=prepared_plan)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment

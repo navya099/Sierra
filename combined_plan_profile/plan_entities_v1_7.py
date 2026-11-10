@@ -53,18 +53,37 @@ def _sheet_matchlines(transform, sheet_start, sheet_end, points, distances, orig
 
 def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizontal_scale,
                          layers=DEFAULT_LAYERS, *, sheet_start=None, sheet_end=None,
-                         fl_points=None, fl_distances=None, station_origin=0., station_cache=None, plan_rect=None):
+                         fl_points=None, fl_distances=None, station_origin=0., station_cache=None, plan_rect=None, plan_style=None, source_entities=None):
     """Transform selected DXF modelspace entities; clip LINE, reject out-of-frame labels/symbols.
     Source entities in IP_Block_* are deliberately excluded: their absolute block coordinates
     and zero insertion require a separate safe block handler.
     """
+    # REG2-2-D1: Station styles affect copied km/200 entities only.
+    # Auxiliary markers, curve annotations, ticks and VIP are unchanged.
+    station_styles = {}
+    if plan_style is not None:
+        station_styles = {
+            'km심볼': plan_style.station.km.symbol,
+            'km문자': plan_style.station.km.text,
+            '200심볼': plan_style.station.main.symbol,
+            '200문자': plan_style.station.main.text,
+        }
     src=source_doc.modelspace(); dst=target_doc.modelspace()
-    # REG1-FIX2-A
-    # CAD 1:1 좌표계에서 원본 주석 크기 유지
-    k = 1.0
-    # FIX2-1 uses an enlarged sheet frame in CAD mode. Use its effective
-    # plan area, not the legacy fixed H1000 rectangle, for annotation clipping.
-    # Caller can supply exact frame; otherwise infer from sheet scale.
+    # REG2-1: annotation scale
+    annotation_scale = horizontal_scale / 1000.0
+
+    station_annotation_layers = {
+        "km심볼",
+        "200심볼",
+        "보조심볼",
+        "km문자",
+        "200문자",
+        "보조문자",
+    }
+
+    # Only station labels and symbols are scaled in REG2-1.
+    # Curve annotations retain their REG1 dimensions.
+
     if plan_rect is None:
         factor = horizontal_scale / 1000.0
         plan_rect = tuple(v * factor for v in PLAN_RECT)
@@ -72,8 +91,15 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
     selected={name.casefold() for name in layers}
     matchlines = (_sheet_matchlines(transform,sheet_start,sheet_end,fl_points,fl_distances,station_origin)
                   if fl_points is not None and sheet_start is not None and sheet_end is not None else None)
-    for e in src:
+    for e in (src if source_entities is None else source_entities):
         layer=e.dxf.get('layer','0')
+        k = (
+            annotation_scale
+            if layer.casefold() in {
+                name.casefold() for name in station_annotation_layers
+            }
+            else 1.0
+        )
         if layer.casefold() not in selected: continue
         typ=e.dxftype()
         if layer not in target_doc.layers:
@@ -81,6 +107,9 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             target_doc.layers.new(layer,dxfattribs={'color':orig.dxf.get('color',7) if orig is not None else 7})
         attrs={'layer':layer}
         if e.dxf.hasattr('color'): attrs['color']=e.dxf.color
+        station_style = station_styles.get(layer.casefold())
+        if station_style is not None and station_style.color is not None:
+            attrs['color'] = station_style.color
         # v1.7.2: 1km/200m markers and text are selected by FL station,
         # not by their transformed location inside the PLAN frame.
         station_layers = {'km심볼', '200심볼', '보조심볼', 'km문자', '200문자', '보조문자'}
@@ -123,9 +152,13 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
         leader = typ=='LINE' and layer.casefold() == '곡선인출선'.casefold()
         if leader and fl_points is not None:
             # Use the endpoint nearest to FL; v9 leader direction is not guaranteed.
-            sta0,offset0=_station_of_point(e.dxf.start,fl_points,fl_distances,station_origin)
-            sta1,offset1=_station_of_point(e.dxf.end,fl_points,fl_distances,station_origin)
-            sta,offset=(sta0,offset0) if offset0 <= offset1 else (sta1,offset1)
+            cached = station_cache.get(e.dxf.handle) if station_cache is not None else None
+            if cached is not None:
+                sta, offset = cached
+            else:
+                sta0, offset0 = _station_of_point(e.dxf.start, fl_points, fl_distances, station_origin)
+                sta1, offset1 = _station_of_point(e.dxf.end, fl_points, fl_distances, station_origin)
+                sta, offset = (sta0, offset0) if offset0 <= offset1 else (sta1, offset1)
             if (sta is None or offset > 2.0 or
                 (sheet_start is not None and sta < sheet_start-1e-5) or
                 (sheet_end is not None and sta > sheet_end+1e-5)):
@@ -167,6 +200,8 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             else:counts['skipped']+=1
         elif typ=='CIRCLE':
             c=transform(e.dxf.center);r=e.dxf.radius*k
+            if station_style is not None:
+                r=station_style.radius
             if _inside(c,rect=plan_rect,margin=0):
                 dst.add_circle(c,r,dxfattribs=attrs);counts['CIRCLE']+=1
             else:counts['skipped']+=1
@@ -174,7 +209,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
             p=transform(e.dxf.insert)
             # Anchor-based filtering; text extents are not clipped in this version.
             if _inside(p,rect=plan_rect,margin=0) or layer.casefold() == '곡선제원문자'.casefold():
-                attrs.update(insert=p,height=e.dxf.get('height',2.5)*k,
+                attrs.update(insert=p,height=(station_style.height if station_style is not None else e.dxf.get('height',2.5)*k),
                              rotation=(e.dxf.get('rotation',0)-math.degrees(angle_rad))%360)
                 if e.dxf.hasattr('style') and e.dxf.style in target_doc.styles:attrs['style']=e.dxf.style
                 if e.dxf.hasattr('width'):attrs['width']=e.dxf.width
@@ -193,7 +228,7 @@ def render_plan_entities(source_doc, target_doc, transform, angle_rad, horizonta
         elif typ=='MTEXT':
             p=transform(e.dxf.insert)
             if _inside(p,rect=plan_rect,margin=0):
-                attrs.update(insert=p,char_height=e.dxf.get('char_height',2.5)*k,
+                attrs.update(insert=p,char_height=(station_style.height if station_style is not None else e.dxf.get('char_height',2.5)*k),
                              rotation=(e.dxf.get('rotation',0)-math.degrees(angle_rad))%360)
                 dst.add_mtext(e.text,dxfattribs=attrs);counts['MTEXT']+=1
             else:counts['skipped']+=1
