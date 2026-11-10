@@ -6,7 +6,7 @@ from profile_presets.loader import validate_preset
 from profile_presets.runtime import to_drawing_preset
 from structure_label import ProfileLabelStyle, LabelSettings, label_lines
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 class StructurePresetTests(unittest.TestCase):
     def setUp(self):

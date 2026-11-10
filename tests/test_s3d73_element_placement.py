@@ -9,7 +9,7 @@ from ezdxf.enums import TextEntityAlignment
 from alignment_band import draw_alignment_band
 from profile_presets.loader import validate_preset
 from profile_drawing import _text
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parent.parent
 
 class ElementPlacementTests(unittest.TestCase):
     def setUp(self):

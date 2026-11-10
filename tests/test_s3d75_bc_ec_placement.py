@@ -9,7 +9,7 @@ from alignment_band import draw_alignment_band
 from profile_drawing import _text
 from profile_presets.loader import validate_preset
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parent.parent
 
 class SimpleCurveElementTests(unittest.TestCase):
     def setUp(self):

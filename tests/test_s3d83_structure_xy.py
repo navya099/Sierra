@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from structure_label import LabelSettings, ProfileLabelStyle, draw_structure_labels
 from profile_presets.loader import validate_preset
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parent.parent
 class XYTests(unittest.TestCase):
     def setUp(self):
         self.p=json.loads((ROOT/'profile_presets/cad/h5000_v1000.json').read_text(encoding='utf-8'))

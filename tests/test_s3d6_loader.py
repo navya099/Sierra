@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from profile_presets.loader import load_preset, validate_preset
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 V2 = HERE / 'h5000_v1000_schema_v2.json'
 
 class TestS3D6Loader(unittest.TestCase):

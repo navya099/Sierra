@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from profile_presets.loader import load_preset_file, load_preset, list_presets
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 CUSTOM = ROOT / 'custom_preset.json'
 
 class CustomPresetReleaseTests(unittest.TestCase):

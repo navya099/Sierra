@@ -11,7 +11,7 @@ from profile_presets.loader import validate_preset
 from profile_presets.runtime import to_drawing_preset
 from profile_drawing import _text
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 class AlignmentD7Tests(unittest.TestCase):
     def setUp(self):

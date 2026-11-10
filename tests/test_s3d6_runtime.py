@@ -9,7 +9,7 @@ from profile_presets.runtime import to_drawing_preset
 from profile_drawing import DrawingOptions, create_profile_drawing
 from test_s3d2_preset_dxf import TestS3D2, entities
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 class RuntimeV2Tests(unittest.TestCase):
     def setUp(self):
