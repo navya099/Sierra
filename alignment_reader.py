@@ -56,9 +56,8 @@ def cross_turn(p0, p1, p2):
     if abs(cross) < 1e-8 * math.hypot(ax, ay) * math.hypot(bx, by):
         return 'UNKNOWN', 0.0
     return ('LEFT', -6.0) if cross > 0 else ('RIGHT', 6.0)
-
-def extract(path):
-    doc = ezdxf.readfile(str(path))
+#P3-A 최적화 작업
+def _extract_from_doc(doc):
     msp = doc.modelspace()
     ips = [parse_block(doc.blocks[insert.dxf.name]) for insert in msp.query('INSERT')
            if insert.dxf.name.upper().startswith('IP_BLOCK_')]
@@ -85,6 +84,11 @@ def extract(path):
         ip['ip_line_vertex_index'] = index+1
         ip['coordinate_match_error_m'] = round(error, 6)
     return ips
+#P3-A 최적화 작업
+def extract(path):
+    """Extract IP data from a DXF path."""
+    doc = ezdxf.readfile(str(path))
+    return _extract_from_doc(doc)
 
 # Source generator (본선선형계산v9.py) writes station annotations as
 # ordinary TEXT on 곡선제원문자, in increasing IP / station order.
@@ -110,10 +114,14 @@ def extract_with_stations(path, *, cl_tolerance_m=0.03):
     Order is based on source writer's IP order, not TEXT insertion coordinates.
     Raises instead of silently associating ambiguous/incomplete groups.
     """
-    ips = extract(path)
+    #P3-A 최적화 작업
     doc = ezdxf.readfile(str(path))
-    texts = [ent.dxf.text for ent in doc.modelspace().query('TEXT')
-             if ent.dxf.layer in ('곡선제원문자', '선형제원문자')]
+    ips = _extract_from_doc(doc)
+    texts = [
+        ent.dxf.text
+        for ent in doc.modelspace().query('TEXT')
+        if ent.dxf.layer in ('곡선제원문자', '선형제원문자')
+    ]
     if not texts:
         raise ValueError('No curve station TEXT on 곡선제원문자/선형제원문자')
     annotations = [parse_station_text(t) for t in texts]
