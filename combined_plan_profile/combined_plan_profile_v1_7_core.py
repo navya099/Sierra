@@ -238,11 +238,15 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
 def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta=None,
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
              vertical_scale=400., project_name=None, route_name=None, titleblock_config=None,
-             left_direction="서울쪽", right_direction="부산쪽", drawing_mode=DrawingMode.REPORT):
+             left_direction="서울쪽", right_direction="부산쪽", drawing_mode=DrawingMode.REPORT,
+             prepared_plan=None):
     drawing_mode = DrawingMode(drawing_mode)
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
-    pts,ds=read_alignment(plan)
-    fl_global_width=read_fl_global_width(plan)
+    if prepared_plan is None:
+        pts,ds=read_alignment(plan)
+        fl_global_width=read_fl_global_width(plan)
+    else:
+        pts,ds,fl_global_width=prepared_plan
     if not math.isfinite(fl_global_width) or fl_global_width < 0:
         raise ValueError(f"FL GLOBAL_WIDTH 값이 올바르지 않습니다: {fl_global_width}")
     start=station_origin if start_sta is None else start_sta
