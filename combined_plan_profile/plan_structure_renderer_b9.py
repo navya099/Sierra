@@ -125,8 +125,17 @@ def _open_segments(points,edges):
         if seg and math.dist(*seg)>1e-7:yield seg
 
 
-def render_structure_sheet(doc,source_doc,transform,start,end,station_origin,points,distances):
-    frame,edges=make_plan_matchline_polygon(start,end,station_origin,points,distances,transform)
+def render_structure_sheet(
+    doc, source_doc, transform,
+    start, end, station_origin, points, distances,
+    *, plan_rect=None
+):
+    frame, edges = make_plan_matchline_polygon(
+        start, end, station_origin,
+        points, distances, transform,
+        rect=plan_rect,
+    )
+
     msp=doc.modelspace()
     counts={'closed':0,'open':0,'circle':0,'text':0}
     for layer in source_doc.layers:
@@ -159,8 +168,13 @@ def render_structure_sheet(doc,source_doc,transform,start,end,station_origin,poi
             if len(poly)>=3:
                 msp.add_lwpolyline(poly,close=True,dxfattribs={'layer':layer});counts['circle']+=1
         elif kind=='TEXT':
-            at=transform(tuple(ent.dxf.insert)[:2])
-            if all(_inside(at,(a,b)) for a,b in zip(frame,frame[1:]+frame[:1])):
+            at = transform(tuple(ent.dxf.insert)[:2])
+
+            inside = all(
+                _inside(at, (a, b))
+                for a, b in zip(frame, frame[1:] + frame[:1])
+            )
+            if inside:
                 txt=msp.add_text(ent.dxf.text,dxfattribs={'layer':layer,'height':ent.dxf.height*scale,
                     'rotation':(ent.dxf.get('rotation',0.)+rot)%360,'style':ent.dxf.get('style','Standard')})
                 txt.dxf.insert=at

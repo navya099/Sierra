@@ -267,8 +267,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
         ip_labels=render_ip_labels(source_doc,doc,transform,angle,horizontal_scale)
         print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
 
-        #REG2
-        vip_scale = horizontal_scale / 1000.0
+        # REG2-R2-A: 평면 VIP 주석 프리셋 연동
+        vip_style = plan_annotation_style.vip
 
         vip_count = render_plan_vips(
             doc, vip, transform,
@@ -277,15 +277,21 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
             fl_points=fl_points,
             fl_distances=fl_distances,
             station_origin=station_origin,
-            stem=30.0 * vip_scale,
-            arm=10.5 * vip_scale,
-            text_height=3.0 * vip_scale,
+            stem=vip_style.leader.stem_length,
+            arm=vip_style.leader.arm_length,
+            text_height=vip_style.text.height,
+            text_color=vip_style.text.color,
+            leader_color=vip_style.leader.color,
+            enabled=vip_style.enabled,
             plan_rect=plan_rect,
         )
         print(f"[평면 VIP/구배] {index}시트: {vip_count}개",flush=True)
         if plan_structure_cache is not None:
-            result=render_structure_sheet(doc,plan_structure_cache,transform,a,b,station_origin,fl_points,fl_distances)
-            print(f"[B.9 평면 구조물] {index}시트: {result}",flush=True)
+            result = render_structure_sheet(
+                doc, plan_structure_cache, transform,
+                a, b, station_origin, fl_points, fl_distances,
+                plan_rect=plan_rect,
+            )
     return generate(template,plan,output_dir,station_origin=station_origin,
          start_sta=start,end_sta=end,sheet_length=sheet_length,
          horizontal_scale=horizontal_scale,vertical_scale=vertical_scale,

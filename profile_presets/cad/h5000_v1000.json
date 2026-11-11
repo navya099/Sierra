@@ -179,6 +179,17 @@
           "margin": 3.0
         }
       },
+      "plan_structure_label": {
+  "enabled": true,
+  "text": {
+    "height": 15.0,
+    "color": 1
+  },
+  "placement": {
+    "offset": 15.0
+  },
+  "layer": "STRUCTURE_LABEL_PLAN"
+},
       "plan": {
         "station": {
           "km": {

@@ -21,20 +21,28 @@ def _inside(p, rect):
         and rect[1] <= p[1] <= rect[3]
     )
 
-#REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
-def _line(msp, a, b, layer, rect):
+#REG2-R2: 선택적 색상 인수를 받도록 변경
+def _line(msp, a, b, layer, rect, color=None):
     segment = clip(a, b, rect)
     if segment and math.dist(*segment) > 1e-8:
-        msp.add_line(*segment, dxfattribs={'layer': layer})
+        attribs = {'layer': layer}
+        if color is not None:
+            attribs['color'] = color
+        msp.add_line(*segment, dxfattribs=attribs)
 
-def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, text_height=3., plan_rect=PLAN_RECT):
+def draw_symbol(
+    msp, xy, tangent, grade_in, grade_out, *,
+    stem=30., arm=10.5, text_height=3.,
+    text_color=None, leader_color=1,
+    plan_rect=PLAN_RECT,
+):
     """Identical local geometry/labels to final_plan_vip.draw_symbol, in paper mm."""
     tx, ty = tangent
     nx, ny = -ty, tx
     def tr(x, y): return (xy[0]+tx*x+nx*y, xy[1]+ty*x+ny*y)
     pivot = (0., stem)
     # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
-    _line(msp, tr(0, 0), tr(*pivot), 'PLAN_VIP_LINE', plan_rect)
+    _line(msp, tr(0, 0), tr(*pivot), 'PLAN_VIP_LINE', plan_rect, leader_color)
     for grade, side in ((grade_in, 'IN'), (grade_out, 'OUT')):
         angle = math.radians(30 if grade > 1e-8 else -30 if grade < -1e-8 else 0)
         vx, vy = arm*math.cos(angle), arm*math.sin(angle)
@@ -46,13 +54,21 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
             ux, uy = math.cos(angle), math.sin(angle)
             text_xy = (vx-0.65*ux-0.65*uy, stem+vy-0.65*uy+0.65*ux)
         # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
-        _line(msp, tr(*start), tr(*end), f'PLAN_GRADE_{side}_LINE', plan_rect)
+        _line(msp, tr(*start), tr(*end), f'PLAN_GRADE_{side}_LINE', plan_rect, leader_color)
         text_pos = tr(*text_xy)
         # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
         if not _inside(text_pos, plan_rect):continue
         rotation = (math.degrees(math.atan2(ty, tx))+math.degrees(angle)) % 360
-        label = msp.add_text(fmt_grade(grade), dxfattribs={
-            'layer':f'PLAN_GRADE_{side}_TEXT', 'height':text_height, 'rotation':rotation})
+        #REG2-R2 색상 속성을 선택적으오 전달
+        text_attribs = {
+            'layer': f'PLAN_GRADE_{side}_TEXT',
+            'height': text_height,
+            'rotation': rotation,
+        }
+        if text_color is not None:
+            text_attribs['color'] = text_color
+
+        label = msp.add_text(fmt_grade(grade), dxfattribs=text_attribs)
         if side == 'OUT':
             label.set_placement(text_pos, align=TextEntityAlignment.RIGHT)
         else:
@@ -60,8 +76,13 @@ def draw_symbol(msp, xy, tangent, grade_in, grade_out, *, stem=30., arm=10.5, te
 
 def render_plan_vips(target_doc, vips, transform, *, sheet_start, sheet_end,
                      fl_points, fl_distances, station_origin=0.,
-                     stem=30., arm=10.5, text_height=3., plan_rect=PLAN_RECT):
+                     stem=30., arm=10.5, text_height=3.,
+                     text_color=None, leader_color=1,
+                     enabled=True,
+                     plan_rect=PLAN_RECT):
     """Assign boundary VIP to following sheet; omit end-of-route endpoint."""
+    if not enabled:
+        return 0
     for name in LAYERS:
         if name not in target_doc.layers:
             target_doc.layers.new(name, dxfattribs={'color':1})
@@ -85,8 +106,15 @@ def render_plan_vips(target_doc, vips, transform, *, sheet_start, sheet_end,
         length = math.dist(xy, tangent_end)
         if length < 1e-10: raise ValueError('Degenerate transformed FL tangent')
         tangent = ((tangent_end[0]-xy[0])/length, (tangent_end[1]-xy[1])/length)
-        # REG1-FIX2-B: 기존 함수의 역할을 유지하면서 동적 평면 영역을 전달하도록 수정
-        draw_symbol(msp, xy, tangent, vip.gradient_in, vip.gradient_out,
-                    stem=stem, arm=arm, text_height=text_height, plan_rect=plan_rect)
+        #REG-R2 leader_color와 text_color 전달
+        draw_symbol(
+            msp, xy, tangent, vip.gradient_in, vip.gradient_out,
+            stem=stem,
+            arm=arm,
+            text_height=text_height,
+            text_color=text_color,
+            leader_color=leader_color,
+            plan_rect=plan_rect,
+        )
         count += 1
     return count
