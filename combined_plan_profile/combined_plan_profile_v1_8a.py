@@ -39,6 +39,7 @@ class SierraLogFilter:
         "[IP교점선]", "[IP문자/제원표]", "[평면 VIP/구배]",
         "[B.9 평면 구조물]", "[B.13]", "[도각 속성]",
         "[G1-2D-4-FIX2]",
+        "[P5-B-2]", "[DXF AUDIT]",
     )
 
     def __init__(self, stream):
@@ -132,7 +133,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
           left_direction="서울쪽",right_direction="부산쪽",
           structures_csv=None,structure_settings_json=None,vertical_curve_csv=None,
           vertical_curve_sta_json=None,vertical_curve_index_json=None,vertical_curve_simple_csv=None,
-          structure_label_preset=None):
+          structure_label_preset=None,
+          audit_mode='file',
+          audit_debug=False):
     titleblock_config=load_titleblock_config(titleblock_config_path)
     structures=load_structures(structures_csv) if structures_csv else None
     structure_kwargs=load_drawing_settings(structure_settings_json) if structures else {}
@@ -290,7 +293,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
          profile_hook=render,plan_hook=render_plan,
          left_direction=left_direction,right_direction=right_direction,
          drawing_mode=DrawingMode.CAD,
-         prepared_plan=prepared_plan)
+         prepared_plan=prepared_plan,
+         audit_mode=audit_mode,
+         audit_debug=audit_debug)
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
@@ -322,6 +327,12 @@ if __name__=="__main__":
     p.add_argument("--structure-settings-json",type=Path,help="거더/교각/터널/주석 설정 JSON (선택)")
     p.add_argument("--structure-label-preset",type=Path,help="S3-D9 CAD 프리셋 JSON (생략 시 축척별 내장 프리셋)")
     p.add_argument("--debug-log", action="store_true", help="상세 로그 표시")
+    p.add_argument(
+        "--audit-mode",
+        choices=("file", "memory"),
+        default="file",
+        help="DXF 감사 방식 (file: 저장 후 재로딩, memory: 저장 전 메모리 감사)",
+    )
     a=p.parse_args()
     if not a.debug_log:
         sys.stdout = SierraLogFilter(sys.stdout)
@@ -335,7 +346,9 @@ if __name__=="__main__":
             a.left_direction,a.right_direction,
             a.structures_csv,a.structure_settings_json,a.vertical_curve_csv,
             a.vertical_curve_sta_json,a.vertical_curve_index_json,a.vertical_curve_simple_csv,
-            a.structure_label_preset):
+            a.structure_label_preset,
+            a.audit_mode,
+            a.debug_log):
             if isinstance(item, tuple) and len(item) >= 3:
                 output_file, sheet_start, sheet_end = item[:3]
                 print(f"[시트 완료] {Path(output_file).name} | STA {sheet_start:g}~{sheet_end:g}m", flush=True)

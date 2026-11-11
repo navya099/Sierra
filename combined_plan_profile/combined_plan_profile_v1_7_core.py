@@ -241,7 +241,15 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
              sheet_length=200.,horizontal_scale=1000.,rotation="auto",guides=True, profile_hook=None, plan_hook=None,
              vertical_scale=400., project_name=None, route_name=None, titleblock_config=None,
              left_direction="서울쪽", right_direction="부산쪽", drawing_mode=DrawingMode.REPORT,
-             prepared_plan=None):
+             prepared_plan=None,
+             audit_mode: str = "file",
+             audit_debug: bool = False):
+    audit_mode = str(audit_mode).lower()
+
+    if audit_mode not in {"file", "memory"}:
+        raise ValueError(
+            f"지원하지 않는 audit_mode: {audit_mode}"
+        )
     drawing_mode = DrawingMode(drawing_mode)
     if horizontal_scale<=0:raise ValueError("축척은 양수여야 합니다")
     if prepared_plan is None:
@@ -357,13 +365,62 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         path=out/f"종평면도({number}).dxf"
         if path.resolve() in (Path(template).resolve(),Path(plan).resolve()):
             raise ValueError("입력 파일 덮어쓰기 방지")
-        t0=perf_counter()
-        doc.saveas(str(path))
-        print(f"[성능] {number}시트 DXF 저장: {perf_counter()-t0:.2f}초",flush=True)
-        t0=perf_counter()
-        audit=ezdxf.readfile(str(path)).audit()
-        print(f"[성능] {number}시트 DXF 재읽기+감사: {perf_counter()-t0:.2f}초",flush=True)
-        if audit.errors:raise RuntimeError(f"DXF 감사 오류 {len(audit.errors)}: {path}")
+
+        # PROFILE-PERF1-P5-B-2
+        # DXF audit mode: file / memory
+
+        if audit_mode == "memory":
+            # Audit in-memory DXF before saving.
+            t0 = perf_counter()
+            audit = doc.audit()
+            audit_time = perf_counter() - t0
+
+            if audit.errors:
+                raise RuntimeError(
+                    f"DXF 메모리 감사 오류 {len(audit.errors)}: {path}"
+                )
+
+            t0 = perf_counter()
+            doc.saveas(str(path))
+            save_time = perf_counter() - t0
+
+            if audit_debug:
+                print(
+                    f"[DXF AUDIT][memory] {number}시트 "
+                    f"감사={audit_time:.4f}s | "
+                    f"저장={save_time:.4f}s | "
+                    f"합계={audit_time + save_time:.4f}s",
+                    flush=True,
+                )
+
+        else:
+            # Default: audit the DXF file after saving.
+            t0 = perf_counter()
+            doc.saveas(str(path))
+            save_time = perf_counter() - t0
+
+            t0 = perf_counter()
+            saved_doc = ezdxf.readfile(str(path))
+            reload_time = perf_counter() - t0
+
+            t0 = perf_counter()
+            audit = saved_doc.audit()
+            audit_time = perf_counter() - t0
+
+            if audit.errors:
+                raise RuntimeError(
+                    f"DXF 파일 감사 오류 {len(audit.errors)}: {path}"
+                )
+
+            if audit_debug:
+                print(
+                    f"[DXF AUDIT][file] {number}시트 "
+                    f"저장={save_time:.4f}s | "
+                    f"재로딩={reload_time:.4f}s | "
+                    f"감사={audit_time:.4f}s | "
+                    f"합계={save_time + reload_time + audit_time:.4f}s",
+                    flush=True,
+                )
         results.append((path,sa,sb,segment_count))
     return results
 

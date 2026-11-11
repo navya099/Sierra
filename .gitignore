@@ -6,6 +6,9 @@ __pycache__/
 *.dxf
 *.xlsx
 
+# Python profiling outputs
+*.prof
+
 # Allow reproducible test fixtures
 !assets/
 !assets/test/
