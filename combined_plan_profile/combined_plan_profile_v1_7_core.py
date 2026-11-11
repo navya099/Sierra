@@ -9,6 +9,7 @@ import ezdxf
 from ezdxf.math import Vec2
 from .titleblock_attributes_v1_9a import update_titleblock
 from .sheet_policy import make_sheet_policy
+from io import StringIO
 
 PLAN_RECT=(35.,330.,811.,530.)
 PROFILE_RECT=(35.,70.,811.,315.)
@@ -257,13 +258,29 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     results=[]
     ranges=sheet_ranges(start,end,sheet_length)
+
+    # PROFILE-PERF1-P4-B-2
+    # Load template once and serialize it for independent sheet documents.
+    template_doc = ezdxf.readfile(str(template))
+
+    template_buffer = StringIO()
+    template_doc.write(template_buffer)
+    template_text = template_buffer.getvalue()
+
+    del template_doc
+    template_buffer.close()
+
     # FIX2-1: scaled template, sheet rectangles and paper annotations; CAD FL remains 1:1.
     policy = make_sheet_policy(horizontal_scale, vertical_scale, sheet_length) if drawing_mode is DrawingMode.CAD else None
     plan_rect = policy.plan_rect if policy else PLAN_RECT
     profile_rect = policy.profile_rect if policy else PROFILE_RECT
     paper_factor = policy.paper_factor if policy else 1.0
     for number,(sa,sb) in enumerate(ranges,1):
-        doc=ezdxf.readfile(str(template));msp=doc.modelspace();doc.header['$INSUNITS']=4
+        # Create a fresh, independent DXF document for each sheet.
+        doc = ezdxf.read(StringIO(template_text))
+        msp = doc.modelspace()
+        doc.header['$INSUNITS'] = 4
+
         if paper_factor != 1.0:
             from ezdxf.transform import inplace
             from ezdxf.math import Matrix44
