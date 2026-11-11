@@ -10,6 +10,7 @@ from ezdxf.math import Vec2
 from .titleblock_attributes_v1_9a import update_titleblock
 from .sheet_policy import make_sheet_policy
 from io import StringIO
+import pickle
 
 PLAN_RECT=(35.,330.,811.,530.)
 PROFILE_RECT=(35.,70.,811.,315.)
@@ -259,16 +260,14 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     results=[]
     ranges=sheet_ranges(start,end,sheet_length)
 
-    # PROFILE-PERF1-P4-B-2
-    # Load template once and serialize it for independent sheet documents.
+    # PROFILE-PERF1-P4-B-3-B
+    # Read the template once, then clone independent documents.
     template_doc = ezdxf.readfile(str(template))
-
-    template_buffer = StringIO()
-    template_doc.write(template_buffer)
-    template_text = template_buffer.getvalue()
-
+    template_snapshot = pickle.dumps(
+        template_doc,
+        protocol=pickle.HIGHEST_PROTOCOL,
+    )
     del template_doc
-    template_buffer.close()
 
     # FIX2-1: scaled template, sheet rectangles and paper annotations; CAD FL remains 1:1.
     policy = make_sheet_policy(horizontal_scale, vertical_scale, sheet_length) if drawing_mode is DrawingMode.CAD else None
@@ -277,7 +276,7 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
     paper_factor = policy.paper_factor if policy else 1.0
     for number,(sa,sb) in enumerate(ranges,1):
         # Create a fresh, independent DXF document for each sheet.
-        doc = ezdxf.read(StringIO(template_text))
+        doc = pickle.loads(template_snapshot) #P4-B-3-B: change read pikcle(only verifyed file)
         msp = doc.modelspace()
         doc.header['$INSUNITS'] = 4
 
