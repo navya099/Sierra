@@ -129,7 +129,10 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                            tunnel_settings: TunnelSettings | None = None,
                            target_doc=None,
                            structure_label_style: ProfileLabelStyle | None = None,
-                           alignment_data: dict | None = None) -> dict:
+                           alignment_data: dict | None = None,
+                           profile_ground_points=None,
+                           profile_vip=None) -> dict:
+
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
@@ -263,8 +266,18 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     if options.station_interval <= 0 or options.major_interval <= 0 or options.band_interval <= 0:
         raise ValueError('그리드/밴드 간격은 양수여야 합니다.')
 
-    ground_points = read_ground_points(source)
-    vip = extract_profile(source)
+    #P4-A
+    ground_points = (
+        profile_ground_points
+        if profile_ground_points is not None
+        else read_ground_points(source)
+    )
+
+    vip = (
+        profile_vip
+        if profile_vip is not None
+        else extract_profile(source)
+    )
     plan_points = [(p.sta, p.elevation) for p in vip]
     raw_ground = PiecewiseLinear(ground_points)
     raw_plan = PiecewiseLinear(plan_points)

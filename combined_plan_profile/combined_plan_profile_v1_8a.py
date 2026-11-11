@@ -211,6 +211,8 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
             structures=structures,
             target_doc=doc,
             alignment_data=alignment_data,
+            profile_ground_points=ground, # P4-A
+            profile_vip=vip,
             **structure_kwargs,
         )
 
