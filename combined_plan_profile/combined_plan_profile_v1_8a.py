@@ -36,6 +36,9 @@ from alignment_reader import extract_with_stations
 #REG2-R3-B2-3 — 시트 주석 렌더러 연결
 from profile_presets.sheet_annotation_style import sheet_style_from_preset
 
+#REG2-R4-B1 신규 어댑터 추가
+from .profile_layout_adapter import make_combined_profile_preset
+
 class SierraLogFilter:
     DEBUG_PREFIXES = (
         "[성능]", "[FL GLOBAL_WIDTH]", "[곡선제원/인출선]",
@@ -150,6 +153,13 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
                                          expected_scales=(horizontal_scale, vertical_scale))
     else:
         source_preset = load_preset('cad', horizontal_scale, vertical_scale)
+    # REG2-R4-B1: full profile preset with combined-sheet origin.
+    combined_profile_preset = make_combined_profile_preset(
+        source_preset,
+        horizontal_scale,
+        vertical_scale,
+        sheet_length,
+    )
     plan_annotation_style = plan_style_from_preset(source_preset)
 
     #REG2-R3-B2-3
@@ -194,9 +204,24 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     # PERF1-B: FL length is available from the shared PLAN context below.
     end=hi if end_sta is None else end_sta
     if start<lo or end>hi:raise ValueError("PROFILE 범위를 벗어나는 측점")
-    options=DrawingOptions(origin_x=35.,origin_y=70.,drawing_mode=DrawingMode.CAD,horizontal_scale=horizontal_scale,
-        vertical_scale=vertical_scale,plot_lower_y=135.,plot_upper_y=235.,
-        sheet_start_sta=start,sheet_end_sta=end,horizontal_alignment_dxf=str(Path(plan).resolve()),elevation_pole_solid=True,elevation_pole_labels=True,elevation_pole_at_datum_breaks=True)
+    options=DrawingOptions(
+        origin_x=35.,
+        origin_y=70.,
+        drawing_mode=DrawingMode.CAD,
+        horizontal_scale=horizontal_scale,
+        vertical_scale=vertical_scale,
+        plot_lower_y=135.,
+        plot_upper_y=235.,
+        sheet_start_sta=start,
+        sheet_end_sta=end,
+        horizontal_alignment_dxf=str(Path(plan).resolve()),
+        elevation_pole_solid=True,
+        elevation_pole_labels=True,
+        elevation_pole_at_datum_breaks=True,
+
+        # REG2-R4-B1
+        layout_preset=combined_profile_preset,
+    )
     # P3-B
     if options.horizontal_alignment_dxf and options.include_alignment_placeholder:
         t0 = perf_counter()
