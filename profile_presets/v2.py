@@ -118,10 +118,36 @@ def validate_layout_v2(layout):
         if (not isinstance(layer, str) or not layer.strip() or len(layer) > 255
                 or any(c in layer for c in '<>/\\":;?*|=,')):
             raise ValueError('plan_structure_label.layer: invalid DXF layer name')
-    # REG2-2-A: optional independent PLAN annotation group.
+    # REG2-R3-B1-2: 첫 번째 수정: 프리셋 검증기 확장
     plan = layout['annotations'].get('plan')
     if plan is not None:
-        _object(plan, ('station', 'vip'), 'layout.annotations.plan')
+        plan_keys = ('station', 'vip')
+        if 'ip' in plan:
+            plan_keys += ('ip',)
+
+        _object(plan, plan_keys, 'layout.annotations.plan')
+
+        if 'ip' in plan:
+            ip = plan['ip']
+            prefix = 'layout.annotations.plan.ip'
+
+            _object(ip, ('enabled', 'text', 'table'), prefix)
+
+            if type(ip['enabled']) is not bool:
+                raise ValueError(prefix + '.enabled: boolean required')
+
+            _object(ip['text'], ('height', 'color'), prefix + '.text')
+            _object(ip['table'], ('text_height', 'color'), prefix + '.table')
+
+            _num(ip['text']['height'], prefix + '.text.height')
+            _num(ip['table']['text_height'], prefix + '.table.text_height')
+
+            for group in ('text', 'table'):
+                color = ip[group]['color']
+                if type(color) is not int or not 1 <= color <= 255:
+                    raise ValueError(
+                        prefix + '.' + group + '.color: ACI 1..255 required'
+                    )
         station = plan['station']
         _object(station, ('km', 'main', 'tick'), 'layout.annotations.plan.station')
         for kind in ('km', 'main'):

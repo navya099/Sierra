@@ -57,12 +57,17 @@ class PlanVipStyle:
     text: TextStyle
     leader: LeaderStyle
 
+@dataclass(frozen=True, slots=True)
+class PlanIpStyle:
+    enabled: bool
+    text: TextStyle
+    table: TextStyle
 
 @dataclass(frozen=True, slots=True)
 class PlanAnnotationStyle:
     station: PlanStationStyle
     vip: PlanVipStyle
-
+    ip: PlanIpStyle
 
 def _default_plan(horizontal_scale: int) -> dict[str, Any]:
     """Compatibility fallback ONLY for old presets missing annotations.plan.
@@ -110,6 +115,31 @@ def plan_style_from_preset(preset: Mapping[str, Any]) -> PlanAnnotationStyle:
     tick = stations['tick']
     vip = plan['vip']
     leader = vip['leader']
+
+    #REG2-R3-B1-3: PlanAnnotationStyle 확장
+    ip_raw = plan.get('ip')
+
+    if ip_raw is None:
+        # 기존 프리셋 호환성 유지
+        legacy_height = 3.0 * 1000.0 / scale
+        ip_style = PlanIpStyle(
+            enabled=True,
+            text=TextStyle(legacy_height, 1),
+            table=TextStyle(legacy_height, 7),
+        )
+    else:
+        ip_style = PlanIpStyle(
+            enabled=ip_raw['enabled'],
+            text=TextStyle(
+                float(ip_raw['text']['height']),
+                ip_raw['text']['color'],
+            ),
+            table=TextStyle(
+                float(ip_raw['table']['text_height']),
+                ip_raw['table']['color'],
+            ),
+        )
+
     return PlanAnnotationStyle(
         station=PlanStationStyle(
             km=station_symbol('km'), main=station_symbol('main'),
@@ -122,4 +152,4 @@ def plan_style_from_preset(preset: Mapping[str, Any]) -> PlanAnnotationStyle:
             leader=LeaderStyle(float(leader['stem_length']),
                                float(leader['arm_length']), leader['color']),
         ),
-    )
+    ip=ip_style,)

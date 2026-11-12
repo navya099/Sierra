@@ -264,8 +264,19 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
                         station_origin=station_origin)
         print(f"[성능] {index}시트 IP교점선: {perf_counter()-t0:.2f}초",flush=True)
         t0=perf_counter()
-        ip_labels=render_ip_labels(source_doc,doc,transform,angle,horizontal_scale)
-        print(f"[IP문자/제원표] {index}시트: {ip_labels}; 처리 {perf_counter()-t0:.2f}초",flush=True)
+        #REG2-R3-B1-4: 메인 엔진 연결
+        ip_explicit = (
+                'ip' in source_preset['layout']['annotations'].get('plan', {})
+        )
+        ip_labels = render_ip_labels(
+            source_doc,
+            doc,
+            transform,
+            angle,
+            horizontal_scale,
+            ip_style=plan_annotation_style.ip if ip_explicit else None,
+            plan_rect=plan_rect,
+        )
 
         # REG2-R2-A: 평면 VIP 주석 프리셋 연동
         vip_style = plan_annotation_style.vip
