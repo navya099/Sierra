@@ -115,10 +115,35 @@ def sheet_ranges(start,end,length):
     if n>10000:raise ValueError("시트 10000장 초과")
     return [(start+i*length,min(end,start+(i+1)*length)) for i in range(n)]
 
-def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction="서울쪽", right_direction="부산쪽", *, plan_rect=None, profile_rect=None):
+def draw_sheet_annotations(
+        doc,
+        horizontal_scale,
+        vertical_scale,
+        left_direction="서울쪽",
+        right_direction="부산쪽",
+        *,
+        plan_rect=None,
+        profile_rect=None,
+        sheet_style=None,
+        paper_factor=1.0
+        ):
     """Draw titles and direction labels in sheet-paper millimetres (not source coordinates)."""
     from ezdxf.enums import TextEntityAlignment
     msp = doc.modelspace()
+
+    #REG2-R3-B2-3
+    if paper_factor <= 0:
+        raise ValueError("paper_factor must be positive")
+
+    title_height = (
+        sheet_style.title_height / paper_factor
+        if sheet_style is not None else 4.0
+    )
+    direction_height = (
+        sheet_style.direction_height / paper_factor
+        if sheet_style is not None else 5.0
+    )
+
     layer = "ZPP_SHEET_ANNOTATION"
     if layer not in doc.layers:
         doc.layers.new(layer, dxfattribs={"color": 7})
@@ -130,7 +155,7 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
         cx = (x0 + x1) / 2
         if rect == plan_rect:
             title = f"평면도(S={horizontal_scale:,.0f})"
-            msp.add_text(title, dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+            msp.add_text(title, dxfattribs={"layer": layer, "height": title_height}).set_placement(
                 (cx, y1 - 7.0), align=TextEntityAlignment.MIDDLE_CENTER)
         else:
             # Two stacked scale labels to the right of a vertically centered title.
@@ -138,11 +163,15 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
             mid_y = y1 - 9.0
             title_x = cx - 8.0
             scale_x = cx + 3.0
-            msp.add_text("종단면도", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+            msp.add_text("종단면도", dxfattribs={"layer": layer, "height": title_height}).set_placement(
                 (title_x, mid_y), align=TextEntityAlignment.MIDDLE_RIGHT)
-            msp.add_text(f"(H={horizontal_scale:,.0f}", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+
+            msp.add_text(f"(H={horizontal_scale:,.0f}",
+                         dxfattribs={"layer": layer, "height": title_height}).set_placement(
                 (scale_x, mid_y + 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
-            msp.add_text(f" V={vertical_scale:,.0f})", dxfattribs={"layer": layer, "height": 4.0}).set_placement(
+
+            msp.add_text(f" V={vertical_scale:,.0f})",
+                         dxfattribs={"layer": layer, "height": title_height}).set_placement(
                 (scale_x, mid_y - 3.0), align=TextEntityAlignment.MIDDLE_LEFT)
         cy = (y0 + y1) / 2 + (75.0 * factor if rect == profile_rect else 0.0)
         # Horizontal direction callouts inside each drawing frame.
@@ -168,19 +197,45 @@ def draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction
             msp.add_solid([(tip_x, cy), (base_x, cy - 4.0),
                            (tip_x, cy), (base_x, cy + 4.0)],
                           dxfattribs={"layer": layer, "color": 7})
-            msp.add_text(label, dxfattribs={"layer": layer, "height": 5.0,
+            msp.add_text(label, dxfattribs={"layer": layer, "height": direction_height,
                                            "rotation": 0}).set_placement(
                 (bx + box_w / 2, cy), align=TextEntityAlignment.MIDDLE_CENTER)
         direction_callout(left_direction, True)
         direction_callout(right_direction, False)
 
-def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, angle, *, plan_rect=None, paper_factor=1.0):
+def draw_matchline_and_north(
+        doc,
+        sheet_start,
+        sheet_end,
+        number,
+        total,
+        edges,
+        angle,
+        *,
+        plan_rect=None,
+        paper_factor=1.0,
+        sheet_style=None
+        ):
     """B.13: sheet-paper annotations; north assumes source DXF +Y is grid north.
 
     Labels are inset from each oblique matchline, not tied to a vertical frame.
     """
     from ezdxf.enums import TextEntityAlignment
     msp = doc.modelspace()
+
+    #REG2-R3-B2-3
+    if paper_factor <= 0:
+        raise ValueError("paper_factor must be positive")
+
+    matchline_height = (
+        sheet_style.matchline_height / paper_factor
+        if sheet_style is not None else 3.0
+    )
+    north_height = (
+        sheet_style.north_height / paper_factor
+        if sheet_style is not None else 5.0
+    )
+
     ml_layer = "ZPP_MATCHLINE_LABEL"
     north_layer = "ZPP_NORTH_ARROW"
     for layer in (ml_layer, north_layer):
@@ -211,7 +266,7 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
         # Keep text upright; still parallel to the matchline.
         if 90.0 < rotation <= 270.0:
             rotation -= 180.0
-        msp.add_text(text, dxfattribs={"layer": ml_layer, "height": 3.0,
+        msp.add_text(text, dxfattribs={"layer": ml_layer, "height": matchline_height,
                                        "rotation": rotation}).set_placement(
             (x, y), align=TextEntityAlignment.MIDDLE_CENTER)
 
@@ -233,7 +288,7 @@ def draw_matchline_and_north(doc, sheet_start, sheet_end, number, total, edges, 
     msp.add_line(tip, (tip[0] - nx * back + px * wing, tip[1] - ny * back + py * wing), dxfattribs={"layer": north_layer})
     msp.add_line(tip, (tip[0] - nx * back - px * wing, tip[1] - ny * back - py * wing), dxfattribs={"layer": north_layer})
     msp.add_circle(base, radius=2.0, dxfattribs={"layer": north_layer})
-    msp.add_text("N", dxfattribs={"layer": north_layer, "height": 5.0}).set_placement(
+    msp.add_text("N", dxfattribs={"layer": north_layer, "height": north_height}).set_placement(
         (tip[0] + nx * 5.5, tip[1] + ny * 5.5), align=TextEntityAlignment.MIDDLE_CENTER)
 
 
@@ -243,7 +298,9 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
              left_direction="서울쪽", right_direction="부산쪽", drawing_mode=DrawingMode.REPORT,
              prepared_plan=None,
              audit_mode: str = "file",
-             audit_debug: bool = False):
+             audit_debug: bool = False,
+             sheet_style=None,
+             ):
     audit_mode = str(audit_mode).lower()
 
     if audit_mode not in {"file", "memory"}:
@@ -338,10 +395,33 @@ def generate(template,plan,output_dir,*,station_origin=0.,start_sta=None,end_sta
         if profile_hook is not None:
             profile_hook(doc, sa, sb, number)
         before_annotations = set(e.dxf.handle for e in msp)
-        draw_sheet_annotations(doc, horizontal_scale, vertical_scale, left_direction, right_direction,
-                               plan_rect=plan_rect, profile_rect=profile_rect)
-        draw_matchline_and_north(doc, sa, sb, number, len(ranges), matchline_edges, angle,
-                                 plan_rect=plan_rect, paper_factor=paper_factor)
+
+        #REG2-R3-B2-3
+        draw_sheet_annotations(
+            doc,
+            horizontal_scale,
+            vertical_scale,
+            left_direction,
+            right_direction,
+            plan_rect=plan_rect,
+            profile_rect=profile_rect,
+            sheet_style=sheet_style,
+            paper_factor=paper_factor,
+        )
+
+        draw_matchline_and_north(
+            doc,
+            sa,
+            sb,
+            number,
+            len(ranges),
+            matchline_edges,
+            angle,
+            plan_rect=plan_rect,
+            paper_factor=paper_factor,
+            sheet_style=sheet_style,
+        )
+
         if paper_factor != 1.0:
             # Only newly created paper annotations: scale around the origin, not CAD geometry.
             from ezdxf.transform import inplace

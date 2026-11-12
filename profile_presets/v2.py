@@ -118,6 +118,31 @@ def validate_layout_v2(layout):
         if (not isinstance(layer, str) or not layer.strip() or len(layer) > 255
                 or any(c in layer for c in '<>/\\":;?*|=,')):
             raise ValueError('plan_structure_label.layer: invalid DXF layer name')
+
+    # REG2-R3-B2-2: optional sheet annotation preset.
+    # Heights represent final DXF modelspace text heights.
+    sheet = layout['annotations'].get('sheet')
+
+    if sheet is not None:
+        _object(
+            sheet,
+            ('title', 'direction', 'matchline', 'north'),
+            'layout.annotations.sheet',
+        )
+
+        for name in ('title', 'direction', 'matchline', 'north'):
+            prefix = f'layout.annotations.sheet.{name}'
+
+            _object(
+                sheet[name],
+                ('text_height',),
+                prefix,
+            )
+
+            _num(
+                sheet[name]['text_height'],
+                prefix + '.text_height',
+            )
     # REG2-R3-B1-2: 첫 번째 수정: 프리셋 검증기 확장
     plan = layout['annotations'].get('plan')
     if plan is not None:
@@ -198,6 +223,8 @@ def validate_layout_v2(layout):
             expected_groups += ('plan_structure_label',)
         if group == 'annotations' and plan is not None:
             expected_groups += ('plan',)
+        if group == 'annotations' and sheet is not None:
+            expected_groups += ('sheet',)
         _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
             if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:

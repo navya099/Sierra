@@ -33,6 +33,9 @@ import sys
 #P-3-B ADD extract_with_stations
 from alignment_reader import extract_with_stations
 
+#REG2-R3-B2-3 — 시트 주석 렌더러 연결
+from profile_presets.sheet_annotation_style import sheet_style_from_preset
+
 class SierraLogFilter:
     DEBUG_PREFIXES = (
         "[성능]", "[FL GLOBAL_WIDTH]", "[곡선제원/인출선]",
@@ -148,6 +151,10 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
     else:
         source_preset = load_preset('cad', horizontal_scale, vertical_scale)
     plan_annotation_style = plan_style_from_preset(source_preset)
+
+    #REG2-R3-B2-3
+    sheet_annotation_style = sheet_style_from_preset(source_preset)
+
     # REG2-2-D will pass plan_annotation_style to plan renderers.
     plan_label_style = None
     if structures:
@@ -312,7 +319,9 @@ def build(template,plan,profile,output_dir,sheet_length=200.,horizontal_scale=10
          drawing_mode=DrawingMode.CAD,
          prepared_plan=prepared_plan,
          audit_mode=audit_mode,
-         audit_debug=audit_debug)
+         audit_debug=audit_debug,
+         sheet_style=sheet_annotation_style,
+         )
 
 def read_plan_length(plan):
     from .combined_plan_profile_v1_6_core import read_alignment
