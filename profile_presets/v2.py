@@ -1,5 +1,6 @@
 """S3-D6 nested absolute-dimension preset (schema v2) validation."""
 import math
+from .elevation_pole_style import elevation_pole_style_from_preset
 
 LAYOUT_FIELDS = {
     'sheet': {'origin': ('x','y'), 'margin': ('start','end'), 'drawing_limits': ('plot_lower_y','plot_upper_y')},
@@ -213,6 +214,19 @@ def validate_layout_v2(layout):
                                   (prefix + '.leader.color', vip_plan['leader']['color'])):
             if type(color) is not int or not 1 <= color <= 255:
                 raise ValueError(color_path + ': ACI 1..255 required')
+
+    # REG2-R5-A-2-2: optional Elevation Pole preset
+    elevation_pole = layout["annotations"].get("elevation_pole")
+
+    if elevation_pole is not None:
+        elevation_pole_style_from_preset({
+            "schema_version": 2,
+            "layout": {
+                "annotations": {
+                    "elevation_pole": elevation_pole,
+                },
+            },
+        })
     for group, subgroups in LAYOUT_FIELDS.items():
         expected_groups = tuple(subgroups) + (('alignment',) if group == 'band' and 'alignment' in layout[group] else ())
         if group == 'annotations' and 'alignment' in layout['band']:
@@ -225,6 +239,8 @@ def validate_layout_v2(layout):
             expected_groups += ('plan',)
         if group == 'annotations' and sheet is not None:
             expected_groups += ('sheet',)
+        if group == 'annotations' and elevation_pole is not None:
+            expected_groups += ('elevation_pole',)
         _object(layout[group], expected_groups, f'layout.{group}')
         for subgroup, keys in subgroups.items():
             if group == 'annotations' and subgroup == 'alignment' and 'alignment' in layout['band'] and subgroup not in layout[group]:

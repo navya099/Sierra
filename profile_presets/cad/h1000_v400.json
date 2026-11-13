@@ -235,7 +235,24 @@
             "color": 1
           }
         }
-      }
+      },
+      "elevation_pole": {
+  "enabled": true,
+  "solid": {
+    "width": 2.5,
+    "stripe_height": 10.0,
+    "color": 7
+  },
+  "labels": {
+    "interval_m": 10.0,
+    "text_height": 2.5,
+    "leader_length": 13.75
+  },
+  "placement": {
+    "bottom": "band_top",
+    "top": "plot_upper"
+  }
+}
     }
   },
   "visibility": {

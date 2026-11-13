@@ -28,7 +28,9 @@ from structure_label import LabelSettings, ProfileLabelStyle, draw_structure_lab
 from tunnel_profile import TunnelSettings, draw_tunnel_bodies
 from tunnel_portal import draw_profile_portals
 from tunnel_portal_custom import draw_custom_profile_portals
-
+from profile_presets.elevation_pole_style import (
+    elevation_pole_style_from_preset,
+)
 
 @dataclass(frozen=True)
 class DrawingOptions:
@@ -136,6 +138,14 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     """Build final_result.dxf without ever modifying the source drawing."""
     options = options or DrawingOptions()
     preset = options.layout_preset
+
+    # REG2-R5-A-2-3: Read the v2 style before legacy translation.
+    elevation_pole_style = (
+        elevation_pole_style_from_preset(preset)
+        if preset is not None
+        else None
+    )
+
     alignment_settings = None
     if preset is not None:
         validate_preset(preset, expected_mode=(options.drawing_mode.value if isinstance(options.drawing_mode, DrawingMode) else options.drawing_mode),
@@ -430,12 +440,31 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
     msp = doc.modelspace()
 
     def draw_elevation_pole(pole_left, datum_left, is_break=False):
-        _layer(doc, 'ELEVATION_POLE', 7, 18)
-        pole_mid = pole_left + 1.25
-        pole_right = pole_left + 2.50
+        style = elevation_pole_style
+
+        pole_width = style.solid.width if style else 2.50
+        stripe_h = style.solid.stripe_height if style else 10.0
+        solid_color = style.solid.color if style else 7
+
+        pole_mid = pole_left + pole_width / 2.0
+        pole_right = pole_left + pole_width
+
         pole_bottom = layout.origin_y + layout.band_top  # v1.9-B.2: connect to top of PROFILE_BAND
         pole_top = layout.origin_y + options.plot_upper_y
-        stripe_h = 10.0
+        print(
+            "[REG2-R5-A 표고폴대 진단] "
+            f"H={options.horizontal_scale:g}, "
+            f"V={options.vertical_scale:g}, "
+            f"origin_y={layout.origin_y:.3f}, "
+            f"band_top={layout.band_top:.3f}, "
+            f"plot_lower_y={options.plot_lower_y:.3f}, "
+            f"plot_upper_y={options.plot_upper_y:.3f}, "
+            f"pole_bottom={pole_bottom:.3f}, "
+            f"pole_top={pole_top:.3f}, "
+            f"datum_left={datum_left:.3f}",
+            flush=True,
+        )
+
         if pole_top <= pole_bottom:
             raise ValueError('표고 폴대 상단은 하단보다 높아야 합니다.')
         # All stripes originate at the TOP, as in SAMPLE_ELEVATION_POLE.dxf.
@@ -479,7 +508,34 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             # 8m corresponds to 20 drawing mm at V=400. For other scales,
             # keep a minimum spacing of 18mm to avoid overlapping text.
             nice_steps = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
-            label_step = next((v for v in nice_steps if v * 1000.0 / options.vertical_scale >= 18.0), 1000)
+
+            legacy_step = next(
+                (
+                    v for v in nice_steps
+                    if v * 1000.0 / options.vertical_scale >= 18.0
+                ),
+                1000,
+            )
+
+            label_step = (
+                style.labels.interval_m
+                if style
+                else legacy_step
+            )
+
+            label_height = (
+                style.labels.text_height
+                if style
+                else 2.5
+            )
+
+            leader_length = (
+                style.labels.leader_length
+                if style
+                else 13.75
+            )
+
+
             for el in _multiples(el_bottom, el_top, label_step):
                 y = graph_datum_y + (el - datum_left) * 1000.0 / options.vertical_scale
                 if not pole_bottom - 1e-7 <= y <= pole_top + 1e-7:
@@ -488,10 +544,22 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                 # leader from the pole's left edge.  Its elevation TEXT has
                 # MIDDLE_LEFT alignment at the leader endpoint, 3 mm above
                 # the elevation line (sample: line y=240.25, align y=243.25).
-                label_x = pole_left - 13.75
-                _line(msp, label_x, y, pole_left, y, 'ELEVATION_POLE_TEXT')
-                _text(msp, f'{el:.2f}', label_x, y + 3.0, 2.5,
-                      'ELEVATION_POLE_TEXT', align=TextEntityAlignment.MIDDLE_LEFT)
+                label_x = pole_left - leader_length
+
+                _line(
+                    msp, label_x, y, pole_left, y,
+                    'ELEVATION_POLE_TEXT',
+                )
+
+                _text(
+                    msp,
+                    f'{el:.2f}',
+                    label_x,
+                    y + 3.0,
+                    label_height,
+                    'ELEVATION_POLE_TEXT',
+                    align=TextEntityAlignment.MIDDLE_LEFT,
+                )
             # Prevent misleading interpretation when a sheet has multiple
             # datum segments: explicitly identify the pole's datum.
             if len(datum_segments) > 1 and not is_break:
@@ -500,7 +568,15 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
                       align=TextEntityAlignment.MIDDLE_RIGHT)
 
     # R2-5C-3: Optional elevation pole at the left edge.
-    if options.elevation_pole_solid:
+    pole_enabled = (
+            options.elevation_pole_solid
+            and (
+                    elevation_pole_style is None
+                    or elevation_pole_style.enabled
+            )
+    )
+
+    if pole_enabled:
         draw_elevation_pole(
             data_left,
             datum_segments[0].datum_el,
@@ -589,11 +665,17 @@ def create_profile_drawing(source_dxf: str | Path, output_dxf: str | Path,
             y1 = yhi
 
             if (
-                options.elevation_pole_solid
-                and options.elevation_pole_at_datum_breaks
+                    pole_enabled
+                    and options.elevation_pole_at_datum_breaks
             ):
+                pole_width = (
+                    elevation_pole_style.solid.width
+                    if elevation_pole_style
+                    else 2.5
+                )
+
                 draw_elevation_pole(
-                    x - 2.5,
+                    x - pole_width,
                     right.datum_el,
                     is_break=True,
                 )
